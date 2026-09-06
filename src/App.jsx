@@ -30,6 +30,8 @@ import {
 } from 'lucide-react';
 import './App.css';
 import { RecoveryControl } from './components/recovery';
+import { RiskRadar } from './components/risk';
+import { DiningHub } from './components/dining';
 import OnboardingGuide from './components/OnboardingGuide';
 
 // --- i18n Translation Dictionary ---
@@ -2400,76 +2402,7 @@ function App() {
               </div>
 
               {/* 🔮 Risk Radar Section */}
-              {riskRadar && riskRadar.nodes && riskRadar.nodes.length > 0 && disruptionState === 'healthy' && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden"
-                >
-                  <div className="px-5 py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg">🔮</span>
-                      <div>
-                        <h3 className="font-extrabold text-sm tracking-tight">Risk Radar</h3>
-                        <p className="text-[10px] text-white/80 font-mono">Real-time weather + buffer risk analysis</p>
-                      </div>
-                    </div>
-                    <span className={`text-[10px] font-mono font-bold uppercase px-2.5 py-1 rounded-full border ${
-                      riskRadar.risk_level === 'HIGH' ? 'bg-red-500/20 border-red-300 text-red-100' :
-                      riskRadar.risk_level === 'MEDIUM' ? 'bg-amber-500/20 border-amber-300 text-amber-100' :
-                      'bg-emerald-500/20 border-emerald-300 text-emerald-100'
-                    }`}>
-                      Overall: {riskRadar.risk_level} ({riskRadar.overall_risk}%)
-                    </span>
-                  </div>
-                  <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    {riskRadar.nodes.map((nr) => {
-                      const riskColor = nr.risk_level === 'HIGH' ? 'red' : nr.risk_level === 'MEDIUM' ? 'amber' : 'emerald';
-                      const weatherIcon = nr.weather?.icon || nr.weather?.origin?.icon || '🌤️';
-                      const weatherCondition = nr.weather?.condition || nr.weather?.origin?.condition || 'Clear';
-                      const weatherAdvisory = nr.weather?.advisory || nr.weather?.origin?.advisory || '';
-                      return (
-                        <div key={nr.node_id} className={`p-3.5 rounded-xl border bg-${riskColor}-50/50 border-${riskColor}-200/60`}>
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-bold text-slate-700 truncate pr-2">
-                              {nr.type === 'FLIGHT' ? '✈️' : nr.type === 'CAB' ? '🚕' : nr.type === 'HOTEL' ? '🏨' : '🚆'} {nr.title.split('(')[0].trim()}
-                            </span>
-                            <span className={`text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded ${
-                              nr.risk_level === 'HIGH' ? 'bg-red-100 text-red-700' :
-                              nr.risk_level === 'MEDIUM' ? 'bg-amber-100 text-amber-700' :
-                              'bg-emerald-100 text-emerald-700'
-                            }`}>
-                              {nr.risk_level}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1.5 mb-2">
-                            <span className="text-sm">{weatherIcon}</span>
-                            <span className="text-[11px] text-slate-600 font-medium">{weatherCondition}</span>
-                          </div>
-                          {/* Risk bar */}
-                          <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-1.5">
-                            <div
-                              className={`h-full rounded-full transition-all duration-700 ${
-                                nr.risk_level === 'HIGH' ? 'bg-red-500' :
-                                nr.risk_level === 'MEDIUM' ? 'bg-amber-400' :
-                                'bg-emerald-400'
-                              }`}
-                              style={{ width: `${Math.min(nr.combined_risk, 100)}%` }}
-                            />
-                          </div>
-                          <div className="flex justify-between text-[9px] text-slate-400 font-mono">
-                            <span>Weather: {nr.weather_risk}%</span>
-                            <span>Buffer: {nr.buffer_risk}%</span>
-                          </div>
-                          {weatherAdvisory && (
-                            <p className="text-[10px] text-slate-500 mt-1.5 leading-snug">{weatherAdvisory}</p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </motion.div>
-              )}
+              <RiskRadar tripId={tripRefNum} />
 
               {/* 👨‍👩‍👦 Family & Group Protection Card */}
               <motion.div
@@ -3167,95 +3100,12 @@ function App() {
               transition={{ duration: 0.25 }}
               className="max-w-5xl mx-auto w-full px-4 sm:px-6 py-10 flex flex-col gap-6"
             >
-              <div className="border-b border-slate-205 pb-5 text-left">
-                <span className="px-3 py-1 rounded-full bg-[#EAF3FF] text-[#287DFA] text-xs font-bold font-mono uppercase tracking-wider">
-                  🍽️ Transit Dining
-                </span>
-                <h1 className="text-2xl font-extrabold text-slate-900 mt-2 font-serif">{t('diningTitle')}</h1>
-                <p className="text-slate-500 text-xs mt-1">{t('diningDesc')} Near <span className="font-extrabold text-[#287DFA]">{activeDestination}</span> Hub.</p>
-              </div>
-
-              {/* Filters list */}
-              <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 pb-4">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">{t('all')}:</span>
-                {['All', 'Pure Veg', 'Local Specialties', 'Fast Delivery', 'Open 24/7'].map(filterOption => (
-                  <button
-                    key={filterOption}
-                    type="button"
-                    onClick={() => setRestaurantFilter(filterOption)}
-                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition cursor-pointer ${
-                      restaurantFilter === filterOption
-                        ? 'bg-[#287DFA] text-white shadow-sm'
-                        : 'bg-white border border-slate-200 text-slate-655 hover:bg-slate-50'
-                    }`}
-                  >
-                    {filterOption === 'Pure Veg' ? t('vegOnly')
-                     : filterOption === 'Local Specialties' ? t('specialties')
-                     : filterOption === 'Fast Delivery' ? t('fastDelivery')
-                     : filterOption === 'Open 24/7' ? t('open247')
-                     : filterOption === 'All' ? t('all')
-                     : filterOption}
-                  </button>
-                ))}
-              </div>
-
-              {/* Restaurant Cards Grid */}
-              {filteredRestaurants.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-                  {filteredRestaurants.map(restaurant => (
-                    <motion.div
-                      layout
-                      key={restaurant.id}
-                      className="bg-white rounded-xl overflow-hidden border border-slate-100 shadow-sm flex flex-col hover:shadow-md transition text-left"
-                    >
-                      <div className="h-44 relative bg-slate-100 overflow-hidden">
-                        <img
-                          src={restaurant.image}
-                          alt={restaurant.name}
-                          className="w-full h-full object-cover hover:scale-105 transition duration-500"
-                        />
-                        {restaurant.open247 && (
-                          <span className="absolute top-3 right-3 bg-red-500 text-white text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider shadow-sm flex items-center gap-1 font-mono">
-                            <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" /> {t('open247')}
-                          </span>
-                        )}
-                        <span className="absolute bottom-3 left-3 bg-slate-900/85 backdrop-blur-xs text-white text-[9px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider font-mono">
-                          📍 {restaurant.distance} {t('kmAway')}
-                        </span>
-                      </div>
-
-                      <div className="p-4 flex-1 flex flex-col justify-between gap-3">
-                        <div className="space-y-1">
-                          <div className="flex items-start justify-between gap-2">
-                            <h3 className="font-extrabold text-sm text-slate-955 font-serif line-clamp-1">{restaurant.name}</h3>
-                            <div className="flex items-center gap-1 shrink-0 text-amber-500 font-bold text-xs">
-                              <Star className="w-3.5 h-3.5 fill-current" />
-                              <span>{restaurant.rating}</span>
-                            </div>
-                          </div>
-                          <p className="text-[11px] font-semibold text-slate-500 line-clamp-1">{restaurant.cuisine}</p>
-                        </div>
-
-                        <div className="flex justify-between items-center border-t border-slate-50 pt-3">
-                          <span className="text-[10px] text-slate-400 font-semibold">{t('avgCost')}: <span className="font-extrabold text-slate-800 font-mono">₹{restaurant.cost}</span></span>
-                          <button
-                            onClick={() => alert(`${t('tableBookedSuccess')} ${restaurant.name}!`)}
-                            className="px-3 py-1.5 bg-[#EAF3FF] hover:bg-[#287DFA] hover:text-white text-[#287DFA] text-[10px] font-bold rounded-lg transition cursor-pointer"
-                          >
-                            {t('bookTable')}
-                          </button>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-16 bg-white rounded-2xl border border-slate-100 flex flex-col items-center gap-2">
-                  <Filter className="w-8 h-8 text-slate-350" />
-                  <h4 className="font-bold text-slate-800 text-sm">{t('noDiningTitle')}</h4>
-                  <p className="text-xs text-slate-450">{t('noDiningDesc')}</p>
-                </div>
-              )}
+              <DiningHub
+                tripId={tripRefNum}
+                tripRef={tripRefNum}
+                currentTripNodes={currentTrip}
+                activeDestination={activeDestination}
+              />
             </motion.div>
           )}
 
