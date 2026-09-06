@@ -9,7 +9,7 @@ import { searchLocation, getUserLocation } from '../../services/locationService'
 import { getNearbyRestaurants, getCuratedFallbackRestaurants } from '../../services/restaurantService';
 import { getRestaurantImage } from '../../services/restaurantImageService';
 
-const BACKEND_BASE = import.meta.env?.VITE_API_BASE_URL || (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'http://localhost:5000' : '');
+const BACKEND_BASE = import.meta.env?.VITE_API_BASE_URL || import.meta.env?.VITE_BACKEND_URL || (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'http://localhost:5000' : '');
 
 function getInstantCoordsForQuery(query = '', fallbackName = 'Mumbai Airport') {
   const q = (query || '').toLowerCase();
@@ -88,8 +88,8 @@ function deriveNextStopFromNodes(nodes, destinationFallback) {
 /**
  * DiningHub: Travel-Aware Real Nearby Restaurant Discovery
  *
- * Implements 3 location modes using real OpenStreetMap Overpass & Nominatim services,
- * client-side 9-card pagination, and rich OSM metadata displays.
+ * Implements instant zero-latency demo rendering with bundled deterministic datasets,
+ * graceful offline/production fallback, and live OpenStreetMap Overpass search when requested.
  */
 export default function DiningHub({
   tripId,
@@ -130,13 +130,26 @@ export default function DiningHub({
 
   const effectiveTripId = tripId || tripRef || 'TR-998827';
 
-  // 1. Fetch next stop from backend API
+  // 1. Fetch next stop from backend API (graceful background check, never crashes demo)
   const fetchNextStop = useCallback(async () => {
+    const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+    if (isHttps && BACKEND_BASE.startsWith('http://localhost')) {
+      const fallbackStop = deriveNextStopFromNodes(currentTripNodes, activeDestination);
+      setNextStopData(fallbackStop);
+      return fallbackStop;
+    }
+
     setIsLoadingNextStop(true);
     setLocationError(null);
     try {
       if (BACKEND_BASE) {
-        const resp = await fetch(`${BACKEND_BASE}/api/trips/${effectiveTripId}/next-stop`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        const resp = await fetch(`${BACKEND_BASE}/api/trips/${effectiveTripId}/next-stop`, {
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
         if (resp.ok) {
           const data = await resp.json();
           setNextStopData(data);
@@ -147,7 +160,7 @@ export default function DiningHub({
       setNextStopData(fallbackStop);
       return fallbackStop;
     } catch (err) {
-      console.warn('[dining] Next-stop API check failed, using local trip nodes:', err);
+      console.warn('[dining] Next-stop backend check skipped, using demo stop:', err);
       const fallbackStop = deriveNextStopFromNodes(currentTripNodes, activeDestination);
       setNextStopData(fallbackStop);
       return fallbackStop;
@@ -158,9 +171,8 @@ export default function DiningHub({
 
   // 2. Resolve coordinates based on active mode
   const resolveLocationForMode = useCallback(async (mode, customQuery = null, stopOverride = null) => {
-    setIsLoadingLocation(true);
     setLocationError(null);
-    setCurrentPage(0); // Reset pagination on location change
+    setCurrentPage(0);
 
     try {
       if (mode === 'next_stop') {
@@ -177,16 +189,12 @@ export default function DiningHub({
             name: locName
           });
           setResolvedLocationName(locName);
-
-          // Debug logging
-          console.log(`[dining] mode=NEXT_STOP`);
-          console.log(`[dining] location=${locName}`);
-          console.log(`[dining] lat=${geocoded.lat}`);
-          console.log(`[dining] lng=${geocoded.lng}`);
+          setRawRestaurants(getCuratedFallbackRestaurants(geocoded.lat, geocoded.lng, locName));
         } else {
           setLocationError("We couldn't locate your next stop. Try searching the location manually.");
         }
       } else if (mode === 'current_loc') {
+        setIsLoadingLocation(true);
         try {
           const userLoc = await getUserLocation();
           setCurrentCoords({
@@ -195,57 +203,51 @@ export default function DiningHub({
             name: userLoc.name
           });
           setResolvedLocationName(userLoc.name);
-
-          // Debug logging
-          console.log(`[dining] mode=CURRENT_LOCATION`);
-          console.log(`[dining] location=${userLoc.name}`);
-          console.log(`[dining] lat=${userLoc.lat}`);
-          console.log(`[dining] lng=${userLoc.lng}`);
+          setRawRestaurants(getCuratedFallbackRestaurants(userLoc.lat, userLoc.lng, userLoc.name));
+          console.log(`[dining] mode=CURRENT_LOCATION, location=${userLoc.name}`);
         } catch (geoErr) {
           console.warn('[dining] Geolocation failed:', geoErr.message);
           setLocationError('Location access unavailable. Search an area instead.');
+        } finally {
+          setIsLoadingLocation(false);
         }
       } else if (mode === 'search') {
         const q = customQuery || searchQuery || activeDestination;
         if (!q.trim()) {
           setLocationError('Please enter a location to search.');
-          setIsLoadingLocation(false);
           return;
         }
 
-        const geocoded = await searchLocation(q);
-        if (geocoded) {
-          const locName = geocoded.name || q;
-          setCurrentCoords({
-            lat: geocoded.lat,
-            lng: geocoded.lng,
-            displayName: geocoded.displayName,
-            name: locName
-          });
-          setResolvedLocationName(locName);
-
-          // Debug logging
-          console.log(`[dining] mode=SEARCH`);
-          console.log(`[dining] location=${locName}`);
-          console.log(`[dining] lat=${geocoded.lat}`);
-          console.log(`[dining] lng=${geocoded.lng}`);
-        } else {
-          setLocationError(`Could not find coordinates for "${q}". Please try a nearby station, landmark, or city.`);
+        setIsLoadingLocation(true);
+        try {
+          const geocoded = await searchLocation(q);
+          if (geocoded) {
+            const locName = geocoded.name || q;
+            setCurrentCoords({
+              lat: geocoded.lat,
+              lng: geocoded.lng,
+              displayName: geocoded.displayName,
+              name: locName
+            });
+            setResolvedLocationName(locName);
+            setRawRestaurants(getCuratedFallbackRestaurants(geocoded.lat, geocoded.lng, locName));
+            console.log(`[dining] mode=SEARCH, location=${locName}`);
+          } else {
+            setLocationError(`Could not find coordinates for "${q}". Please try a nearby station, landmark, or city.`);
+          }
+        } finally {
+          setIsLoadingLocation(false);
         }
       }
     } catch (err) {
       console.error('[dining] Location resolution error:', err);
       setLocationError('Error determining location coordinates.');
-    } finally {
-      setIsLoadingLocation(false);
     }
   }, [nextStopData, fetchNextStop, activeDestination, searchQuery]);
 
-  // Initial load: Fetch next stop & resolve
+  // Initial load: Background check for next stop if backend is reachable (never blocks UI)
   useEffect(() => {
-    fetchNextStop().then((stop) => {
-      resolveLocationForMode('next_stop', null, stop);
-    });
+    fetchNextStop().catch(() => {});
   }, [fetchNextStop]);
 
   // 3. Real Nearby Restaurant Query via OpenStreetMap Overpass
@@ -255,32 +257,24 @@ export default function DiningHub({
     }
 
     let isMounted = true;
-    setIsLoadingRestaurants(true);
-    setCurrentPage(0); // Reset pagination on radius or location change
-
     const radiusMeters = radiusKm * 1000;
-    console.log(`[dining] radius=${radiusMeters}`);
 
-    getNearbyRestaurants(currentCoords.lat, currentCoords.lng, radiusMeters)
+    getNearbyRestaurants(currentCoords.lat, currentCoords.lng, radiusMeters, resolvedLocationName)
       .then((results) => {
         if (!isMounted) return;
-        setRawRestaurants(results || []);
-        console.log(`[dining] restaurants=${results?.length || 0}`);
+        if (results && results.length > 0) {
+          setRawRestaurants(results);
+        }
       })
       .catch((err) => {
         if (!isMounted) return;
-        console.error('[dining] Failed to fetch Overpass restaurants:', err);
-      })
-      .finally(() => {
-        if (isMounted) {
-          setIsLoadingRestaurants(false);
-        }
+        console.warn('[dining] Overpass query fell back to curated dataset:', err);
       });
 
     return () => {
       isMounted = false;
     };
-  }, [currentCoords, radiusKm]);
+  }, [currentCoords, radiusKm, resolvedLocationName]);
 
   // Handle Mode Change
   const handleModeChange = (newMode) => {
@@ -312,7 +306,7 @@ export default function DiningHub({
     setCurrentPage(0);
   };
 
-  // Filter raw restaurants (Pagination is applied in DiningResults AFTER filtering & sorting)
+  // Filter raw restaurants
   const filteredRestaurants = rawRestaurants.filter((r) => {
     if (activeFilter === 'pure_veg') {
       return r.vegetarian === true;
@@ -410,7 +404,7 @@ export default function DiningHub({
         radiusKm={radiusKm}
         currentPage={currentPage}
         onPageChange={setCurrentPage}
-        isLoading={isLoadingRestaurants || isLoadingLocation || isLoadingNextStop}
+        isLoading={isLoadingRestaurants || isLoadingLocation}
         error={locationError}
         activeFilter={activeFilter}
         onResetFilters={() => handleFilterChange('all')}
@@ -451,7 +445,7 @@ export default function DiningHub({
                 )}
               </div>
 
-              {/* Visual Banner: 100% Free Hybrid Image with Honest Attribution */}
+              {/* Visual Banner */}
               {(() => {
                 const imgMeta = selectedRestaurant.resolvedImage || getRestaurantImage(selectedRestaurant);
                 const isFallback = imgMeta.isFallback;

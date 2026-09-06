@@ -2,7 +2,7 @@
  * Location and Geocoding Service for TripResQ
  *
  * Uses OpenStreetMap Nominatim for user-triggered geocoding and reverse geocoding.
- * Includes in-memory caching and real browser geolocation.
+ * Includes in-memory caching and real browser geolocation with instant offline fast-paths.
  */
 
 const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org';
@@ -11,9 +11,20 @@ const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org';
 const geocodeCache = new Map();
 const reverseGeocodeCache = new Map();
 
+export const KNOWN_CITY_COORDINATES = {
+  pune: { lat: 18.5204, lng: 73.8567, displayName: 'Pune, Maharashtra, India', name: 'Pune Railway Station' },
+  goa: { lat: 15.2993, lng: 74.1240, displayName: 'Goa, India', name: 'Madgaon Junction, Goa' },
+  mumbai: { lat: 19.0760, lng: 72.8777, displayName: 'Mumbai, Maharashtra, India', name: 'CSMT Mumbai' },
+  delhi: { lat: 28.6139, lng: 77.2090, displayName: 'Delhi, India', name: 'New Delhi Railway Station' },
+  bengaluru: { lat: 12.9716, lng: 77.5946, displayName: 'Bengaluru, Karnataka, India', name: 'KSR Bengaluru' },
+  bangalore: { lat: 12.9716, lng: 77.5946, displayName: 'Bengaluru, Karnataka, India', name: 'KSR Bengaluru' },
+  jaipur: { lat: 26.9124, lng: 75.7873, displayName: 'Jaipur, Rajasthan, India', name: 'Jaipur Junction' },
+  hyderabad: { lat: 17.3850, lng: 78.4867, displayName: 'Hyderabad, Telangana, India', name: 'Secunderabad Junction' }
+};
+
 // Pre-mapped instant coordinates for major destinations, airports, and transit hubs
-const KNOWN_LOCATIONS = [
-  { match: /(goa|dabolim|taj fort aguada|sinquerim|candolim|panaji|calangute|baga)/i, lat: 15.4925, lng: 73.7736, name: 'Taj Fort Aguada, Goa', displayName: 'Taj Fort Aguada, Sinquerim, Goa' },
+export const KNOWN_LOCATIONS = [
+  { match: /(goa|dabolim|taj fort aguada|sinquerim|candolim|panaji|calangute|baga|madgaon)/i, lat: 15.4925, lng: 73.7736, name: 'Taj Fort Aguada, Goa', displayName: 'Taj Fort Aguada, Sinquerim, Goa' },
   { match: /(mumbai|bom|chhatrapati|bandra|andheri|csmt)/i, lat: 19.0896, lng: 72.8656, name: 'Mumbai Airport', displayName: 'Chhatrapati Shivaji Maharaj International Airport, Mumbai' },
   { match: /(delhi|new delhi|del|igi|connaught place|janpath)/i, lat: 28.5562, lng: 77.1000, name: 'Delhi Airport', displayName: 'Indira Gandhi International Airport, New Delhi' },
   { match: /(pune|pnq|koregaon|shivajinagar|viman nagar)/i, lat: 18.5284, lng: 73.8743, name: 'Pune Railway Station', displayName: 'Pune Railway Station, Pune' },
@@ -29,7 +40,8 @@ const KNOWN_LOCATIONS = [
 
 /**
  * Geocode a user query or destination string into geographic coordinates (lat, lng).
- * @param {string} query - Location name (e.g. "Pune Railway Station", "Connaught Place Delhi", "Goa")
+ * Fast-paths known travel cities to guarantee instant 0ms demo rendering without network risk.
+ * @param {string} query - Location name (e.g. "Pune Railway Station", "Connaught Place Delhi")
  * @returns {Promise<{lat: number, lng: number, displayName: string, address: object}|null>}
  */
 export async function searchLocation(query) {
@@ -40,11 +52,21 @@ export async function searchLocation(query) {
   const cleanQuery = query.trim().replace(/[→\-]/g, ' ');
   const cacheKey = cleanQuery.toLowerCase();
 
-  if (geocodeCache.has(cacheKey)) {
-    return geocodeCache.get(cacheKey);
+  // Instant fast-path for known travel hubs (guarantees zero-network reliability)
+  for (const [key, coords] of Object.entries(KNOWN_CITY_COORDINATES)) {
+    if (cacheKey === key || cacheKey.includes(key)) {
+      return {
+        lat: coords.lat,
+        lng: coords.lng,
+        displayName: coords.displayName,
+        name: cleanQuery.length > 2 ? cleanQuery : coords.name,
+        type: 'city',
+        address: { city: coords.displayName }
+      };
+    }
   }
 
-  // 1. Instant match against known destinations/airports/stations
+  // 1. Instant match against known destinations/airports/stations regex
   for (const loc of KNOWN_LOCATIONS) {
     if (loc.match.test(cleanQuery)) {
       const result = {
@@ -60,10 +82,14 @@ export async function searchLocation(query) {
     }
   }
 
+  if (geocodeCache.has(cacheKey)) {
+    return geocodeCache.get(cacheKey);
+  }
+
   // 2. Query OpenStreetMap Nominatim with clean query
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
 
     const url = `${NOMINATIM_BASE}/search?format=json&q=${encodeURIComponent(cleanQuery)}&addressdetails=1&limit=1`;
     const response = await fetch(url, {
@@ -91,13 +117,13 @@ export async function searchLocation(query) {
       }
     }
   } catch (error) {
-    console.warn('[locationService] Nominatim query error:', error);
+    console.warn('[locationService] Nominatim query error, using fallback:', error);
   }
 
-  // 3. Fallback to default Pune / Goa if query contains general keywords
+  // 3. Fallback to default Pune
   const fallbackResult = {
-    lat: 15.4925,
-    lng: 73.7736,
+    lat: KNOWN_CITY_COORDINATES.pune.lat,
+    lng: KNOWN_CITY_COORDINATES.pune.lng,
     displayName: cleanQuery,
     name: cleanQuery,
     type: 'destination',
@@ -122,13 +148,18 @@ export async function reverseGeocode(lat, lng) {
   }
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+
     const url = `${NOMINATIM_BASE}/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16&addressdetails=1`;
     const response = await fetch(url, {
+      signal: controller.signal,
       headers: {
         'Accept': 'application/json',
         'User-Agent': 'TripResQ-TravelApp/1.0'
       }
     });
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       return null;

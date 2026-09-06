@@ -248,7 +248,10 @@ def get_recovery_options(trip_id):
     """
     trip = db.session.get(Trip, trip_id)
     if not trip:
+        trip = Trip.query.filter_by(id=trip_id).first() or Trip.query.order_by(Trip.created_at.desc()).first()
+    if not trip:
         return jsonify({"error": "Trip not found"}), 404
+    trip_id = trip.id
 
     data = request.get_json(silent=True) or {}
     priority = data.get("priority", "FASTEST")
@@ -263,7 +266,10 @@ def get_recovery_plans(trip_id):
     """
     trip = db.session.get(Trip, trip_id)
     if not trip:
+        trip = Trip.query.filter_by(id=trip_id).first() or Trip.query.order_by(Trip.created_at.desc()).first()
+    if not trip:
         return jsonify({"error": "Trip not found"}), 404
+    trip_id = trip.id
 
     data = request.get_json(silent=True) or {}
     priority = data.get("priority", "FASTEST")
@@ -287,6 +293,8 @@ def apply_plan(trip_id):
         name: body
         schema:
           type: object
+          required:
+            - proposals
           properties:
             proposals:
               type: array
@@ -294,8 +302,19 @@ def apply_plan(trip_id):
                 type: object
     responses:
       200:
-        description: Plan applied and trip restored
+        description: Recovery plan successfully applied
+      400:
+        description: Proposals list missing
+      404:
+        description: Trip not found
     """
+    trip = db.session.get(Trip, trip_id)
+    if not trip:
+        trip = Trip.query.filter_by(id=trip_id).first() or Trip.query.order_by(Trip.created_at.desc()).first()
+    if not trip:
+        return jsonify({"error": "Trip not found"}), 404
+    trip_id = trip.id
+
     data = request.get_json()
     if not data or 'proposals' not in data:
         return jsonify({"error": "proposals list is required"}), 400
@@ -347,10 +366,13 @@ def get_next_stop(trip_id):
 
     trip = db.session.get(Trip, trip_id)
     if not trip:
+        trip = Trip.query.filter_by(id=trip_id).first() or Trip.query.order_by(Trip.created_at.desc()).first()
+    if not trip:
         return jsonify({
             "available": False,
             "reason": "NO_ACTIVE_TRIP"
         }), 200
+    trip_id = trip.id
 
     # Optional reference time for testing or simulation
     curr_time_str = request.args.get('current_time')

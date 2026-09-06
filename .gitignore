@@ -36,23 +36,7 @@ instance/
 *.suo
 *.ntvs*
 *.njsproj
-*.sln
-<<<<<<< HEAD
+# Temporary & Swap files
 *.sw?
-__pycache__/
-instance/
-__pycache__/
-*.pyc
-*.sqlite
-*.db
-instance/
-.env
-venv/
-.venv/
-node_modules/
-dist/
-
-venv/
-=======
-*.sw?
-
+*.bak
+*.tmp
