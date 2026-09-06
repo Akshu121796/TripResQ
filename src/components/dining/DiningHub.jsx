@@ -6,10 +6,84 @@ import NextStopDining from './NextStopDining';
 import DiningFilters from './DiningFilters';
 import DiningResults from './DiningResults';
 import { searchLocation, getUserLocation } from '../../services/locationService';
-import { getNearbyRestaurants } from '../../services/restaurantService';
+import { getNearbyRestaurants, getCuratedFallbackRestaurants } from '../../services/restaurantService';
 import { getRestaurantImage } from '../../services/restaurantImageService';
 
 const BACKEND_BASE = import.meta.env?.VITE_API_BASE_URL || (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'http://localhost:5000' : '');
+
+function getInstantCoordsForQuery(query = '', fallbackName = 'Mumbai Airport') {
+  const q = (query || '').toLowerCase();
+  if (q.includes('mumbai') || q.includes('bom')) return { lat: 19.0896, lng: 72.8656, name: fallbackName || 'Mumbai Airport', displayName: 'Chhatrapati Shivaji Maharaj International Airport, Mumbai' };
+  if (q.includes('goa') || q.includes('dabolim') || q.includes('aguada')) return { lat: 15.4925, lng: 73.7736, name: fallbackName || 'Taj Fort Aguada, Goa', displayName: 'Taj Fort Aguada, Sinquerim, Goa' };
+  if (q.includes('delhi') || q.includes('del') || q.includes('igi')) return { lat: 28.5562, lng: 77.1000, name: fallbackName || 'Delhi Airport', displayName: 'Indira Gandhi International Airport, New Delhi' };
+  if (q.includes('pune') || q.includes('pnq')) return { lat: 18.5284, lng: 73.8743, name: fallbackName || 'Pune Railway Station', displayName: 'Pune Railway Station, Pune' };
+  if (q.includes('bangalore') || q.includes('bengaluru') || q.includes('blr')) return { lat: 12.9716, lng: 77.5946, name: fallbackName || 'Bangalore', displayName: 'Bangalore, Karnataka, India' };
+  if (q.includes('jaipur') || q.includes('jai')) return { lat: 26.9124, lng: 75.7873, name: fallbackName || 'Jaipur', displayName: 'Jaipur, Rajasthan, India' };
+  return { lat: 19.0896, lng: 72.8656, name: fallbackName || 'Mumbai Airport', displayName: 'Mumbai Airport' };
+}
+
+function deriveNextStopFromNodes(nodes, destinationFallback) {
+  const dest = destinationFallback || 'Goa';
+  if (!nodes || nodes.length === 0) {
+    return {
+      available: true,
+      node_id: 'default-destination',
+      node_type: 'TRAIN',
+      name: `${dest} Railway Station`,
+      location: `${dest} Railway Station`,
+      destination: dest,
+      arrival_time: '19:35',
+      latitude: null,
+      longitude: null
+    };
+  }
+
+  const hotelNode = nodes.find(n => (n.type || '').toLowerCase() === 'hotel');
+  if (hotelNode) {
+    return {
+      available: true,
+      node_id: hotelNode.id,
+      node_type: 'HOTEL',
+      name: hotelNode.title || `${dest} Hotel`,
+      location: hotelNode.location || hotelNode.sub || dest,
+      destination: dest,
+      arrival_time: hotelNode.scheduledStart || hotelNode.actualStart || '13:00',
+      latitude: null,
+      longitude: null
+    };
+  }
+
+  const trainOrFlight = nodes.find(n => (n.type || '').toLowerCase() === 'train' || (n.type || '').toLowerCase() === 'flight');
+  if (trainOrFlight) {
+    const typeUpper = (trainOrFlight.type || '').toUpperCase();
+    let stopName = `${dest} Railway Station`;
+    if (typeUpper === 'FLIGHT') stopName = `${dest} Airport`;
+
+    return {
+      available: true,
+      node_id: trainOrFlight.id,
+      node_type: typeUpper,
+      name: stopName,
+      location: trainOrFlight.location || stopName,
+      destination: dest,
+      arrival_time: trainOrFlight.scheduledEnd || trainOrFlight.actualEnd || '19:35',
+      latitude: null,
+      longitude: null
+    };
+  }
+
+  return {
+    available: true,
+    node_id: nodes[0].id,
+    node_type: (nodes[0].type || 'ACTIVITY').toUpperCase(),
+    name: nodes[0].title || `${dest} Destination`,
+    location: nodes[0].title,
+    destination: dest,
+    arrival_time: nodes[0].scheduledStart || '19:35',
+    latitude: null,
+    longitude: null
+  };
+}
 
 /**
  * DiningHub: Travel-Aware Real Nearby Restaurant Discovery
@@ -27,14 +101,19 @@ export default function DiningHub({
   const [activeMode, setActiveMode] = useState('next_stop');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Initial next stop derivation
+  const initialStop = deriveNextStopFromNodes(currentTripNodes, activeDestination);
+  const initialLocQuery = initialStop?.destination || initialStop?.name || activeDestination || 'Mumbai Airport';
+  const initialCoords = getInstantCoordsForQuery(initialLocQuery, initialStop?.name || activeDestination);
+
   // Next stop data from backend
-  const [nextStopData, setNextStopData] = useState(null);
-  const [isLoadingNextStop, setIsLoadingNextStop] = useState(true);
+  const [nextStopData, setNextStopData] = useState(initialStop);
+  const [isLoadingNextStop, setIsLoadingNextStop] = useState(false);
 
   // Active resolved coordinate & location context
-  const [currentCoords, setCurrentCoords] = useState(null); // { lat, lng, displayName, name }
-  const [resolvedLocationName, setResolvedLocationName] = useState(activeDestination || 'Taj Fort Aguada, Goa');
-  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
+  const [currentCoords, setCurrentCoords] = useState(initialCoords);
+  const [resolvedLocationName, setResolvedLocationName] = useState(initialCoords.name);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [locationError, setLocationError] = useState(null);
 
   // Filters & Radius (1km, 3km, 5km)
@@ -44,9 +123,9 @@ export default function DiningHub({
   // Pagination state (0-indexed page)
   const [currentPage, setCurrentPage] = useState(0);
 
-  // Results & UI
-  const [rawRestaurants, setRawRestaurants] = useState([]);
-  const [isLoadingRestaurants, setIsLoadingRestaurants] = useState(true);
+  // Results & UI (Instant 9-card load)
+  const [rawRestaurants, setRawRestaurants] = useState(() => getCuratedFallbackRestaurants(initialCoords.lat, initialCoords.lng, initialLocQuery));
+  const [isLoadingRestaurants, setIsLoadingRestaurants] = useState(false);
   const [selectedRestaurant, setSelectedRestaurant] = useState(null);
 
   const effectiveTripId = tripId || tripRef || 'TR-998827';
@@ -76,70 +155,6 @@ export default function DiningHub({
       setIsLoadingNextStop(false);
     }
   }, [effectiveTripId, currentTripNodes, activeDestination]);
-
-  // Client-side fallback to inspect itinerary nodes
-  const deriveNextStopFromNodes = (nodes, destinationFallback) => {
-    const dest = destinationFallback || 'Goa';
-    if (!nodes || nodes.length === 0) {
-      return {
-        available: true,
-        node_id: 'default-destination',
-        node_type: 'TRAIN',
-        name: `${dest} Railway Station`,
-        location: `${dest} Railway Station`,
-        destination: dest,
-        arrival_time: '19:35',
-        latitude: null,
-        longitude: null
-      };
-    }
-
-    const hotelNode = nodes.find(n => (n.type || '').toLowerCase() === 'hotel');
-    if (hotelNode) {
-      return {
-        available: true,
-        node_id: hotelNode.id,
-        node_type: 'HOTEL',
-        name: hotelNode.title || `${dest} Hotel`,
-        location: hotelNode.location || hotelNode.sub || dest,
-        destination: dest,
-        arrival_time: hotelNode.scheduledStart || hotelNode.actualStart || '13:00',
-        latitude: null,
-        longitude: null
-      };
-    }
-
-    const trainOrFlight = nodes.find(n => (n.type || '').toLowerCase() === 'train' || (n.type || '').toLowerCase() === 'flight');
-    if (trainOrFlight) {
-      const typeUpper = (trainOrFlight.type || '').toUpperCase();
-      let stopName = `${dest} Railway Station`;
-      if (typeUpper === 'FLIGHT') stopName = `${dest} Airport`;
-
-      return {
-        available: true,
-        node_id: trainOrFlight.id,
-        node_type: typeUpper,
-        name: stopName,
-        location: trainOrFlight.location || stopName,
-        destination: dest,
-        arrival_time: trainOrFlight.scheduledEnd || trainOrFlight.actualEnd || '19:35',
-        latitude: null,
-        longitude: null
-      };
-    }
-
-    return {
-      available: true,
-      node_id: nodes[0].id,
-      node_type: (nodes[0].type || 'ACTIVITY').toUpperCase(),
-      name: nodes[0].title || `${dest} Destination`,
-      location: nodes[0].title,
-      destination: dest,
-      arrival_time: nodes[0].scheduledStart || '19:35',
-      latitude: null,
-      longitude: null
-    };
-  };
 
   // 2. Resolve coordinates based on active mode
   const resolveLocationForMode = useCallback(async (mode, customQuery = null, stopOverride = null) => {

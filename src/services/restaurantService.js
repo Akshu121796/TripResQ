@@ -186,7 +186,6 @@ export function resolveRestaurantImage(restaurant) {
   return null;
 }
 
-/**
 // Curated rich demo datasets across major travel destinations (9 authentic places each)
 const CURATED_RESTAURANTS = [
   // Goa (9 restaurants)
@@ -834,31 +833,27 @@ const CURATED_RESTAURANTS = [
   }
 ];
 
-function getCuratedFallbackRestaurants(lat, lng) {
-  // Determine relevant region by geographic bounds
+export function getCuratedFallbackRestaurants(lat = 19.0896, lng = 72.8656, locationHint = '') {
+  // Determine relevant region by location hint or geographic bounds
   let targetRegion = 'universal';
+  const hintLower = (locationHint || '').toLowerCase();
 
-  if (lat >= 27.5 && lat <= 29.5 && lng >= 76.5 && lng <= 78.0) {
-    targetRegion = 'delhi';
-  } else if (lat >= 26.0 && lat <= 27.5 && lng >= 75.0 && lng <= 76.5) {
-    targetRegion = 'jaipur';
-  } else if (lat >= 18.8 && lat <= 20.0 && lng >= 72.5 && lng <= 73.5) {
-    targetRegion = 'mumbai';
-  } else if (lat >= 18.0 && lat <= 18.8 && lng >= 73.5 && lng <= 74.5) {
-    targetRegion = 'pune';
-  } else if (lat >= 12.0 && lat <= 13.5 && lng >= 77.0 && lng <= 78.0) {
-    targetRegion = 'bangalore';
-  } else if (lat >= 14.0 && lat <= 16.5 && lng >= 73.0 && lng <= 75.0) {
-    targetRegion = 'goa';
-  } else if (lat >= 25.0) {
-    targetRegion = 'delhi';
-  } else if (lat >= 18.5) {
-    targetRegion = 'mumbai';
-  } else if (lat >= 14.0) {
-    targetRegion = 'goa';
-  } else if (lat >= 11.0) {
-    targetRegion = 'bangalore';
-  }
+  if (hintLower.includes('mumbai') || hintLower.includes('bom')) targetRegion = 'mumbai';
+  else if (hintLower.includes('goa') || hintLower.includes('dabolim') || hintLower.includes('aguada') || hintLower.includes('candolim')) targetRegion = 'goa';
+  else if (hintLower.includes('delhi') || hintLower.includes('del') || hintLower.includes('igi') || hintLower.includes('connaught')) targetRegion = 'delhi';
+  else if (hintLower.includes('bangalore') || hintLower.includes('bengaluru') || hintLower.includes('blr') || hintLower.includes('koramangala')) targetRegion = 'bangalore';
+  else if (hintLower.includes('pune') || hintLower.includes('pnq')) targetRegion = 'pune';
+  else if (hintLower.includes('jaipur') || hintLower.includes('jai')) targetRegion = 'jaipur';
+  else if (lat >= 27.5 && lat <= 29.5 && lng >= 76.5 && lng <= 78.0) targetRegion = 'delhi';
+  else if (lat >= 26.0 && lat <= 27.5 && lng >= 75.0 && lng <= 76.5) targetRegion = 'jaipur';
+  else if (lat >= 18.8 && lat <= 20.0 && lng >= 72.5 && lng <= 73.5) targetRegion = 'mumbai';
+  else if (lat >= 18.0 && lat <= 18.8 && lng >= 73.5 && lng <= 74.5) targetRegion = 'pune';
+  else if (lat >= 12.0 && lat <= 13.5 && lng >= 77.0 && lng <= 78.0) targetRegion = 'bangalore';
+  else if (lat >= 14.0 && lat <= 16.5 && lng >= 73.0 && lng <= 75.0) targetRegion = 'goa';
+  else if (lat >= 25.0) targetRegion = 'delhi';
+  else if (lat >= 18.5) targetRegion = 'mumbai';
+  else if (lat >= 14.0) targetRegion = 'goa';
+  else if (lat >= 11.0) targetRegion = 'bangalore';
 
   let list = CURATED_RESTAURANTS.filter(r => r.region === targetRegion);
 
@@ -868,10 +863,13 @@ function getCuratedFallbackRestaurants(lat, lng) {
     list = [...list, ...others].slice(0, 9);
   }
 
+  const safeLat = typeof lat === 'number' && !isNaN(lat) ? lat : 19.0896;
+  const safeLng = typeof lng === 'number' && !isNaN(lng) ? lng : 72.8656;
+
   return list.map((item, idx) => {
-    const itemLat = lat + (item.latOffset || ((idx % 3 - 1) * 0.003));
-    const itemLng = lng + (item.lngOffset || (((idx + 1) % 3 - 1) * 0.003));
-    const distanceKm = calculateHaversineDistance(lat, lng, itemLat, itemLng);
+    const itemLat = safeLat + (item.latOffset || ((idx % 3 - 1) * 0.003));
+    const itemLng = safeLng + (item.lngOffset || (((idx + 1) % 3 - 1) * 0.003));
+    const distanceKm = calculateHaversineDistance(safeLat, safeLng, itemLat, itemLng);
     const openStatus = item.openingHours ? checkIsOpenNow(item.openingHours) : null;
 
     return {
@@ -909,23 +907,23 @@ function getCuratedFallbackRestaurants(lat, lng) {
 }
 
 /**
- * Fetch real nearby restaurants from OpenStreetMap Overpass API with reliable, fast fallback.
- * Requests a tight, fast batch (12 items) to immediately fill the 9-card grid.
+ * Fetch real nearby restaurants from OpenStreetMap Overpass API with instant demo fallback.
+ * Requests a tight 12-item batch with a fast 1.5s timeout.
  * @param {number} lat - Latitude
  * @param {number} lng - Longitude
  * @param {number} radiusMeters - Search radius in meters (e.g. 1000, 3000, 5000)
+ * @param {string} [locationHint=''] - Location hint for fallback matching
  * @returns {Promise<Array<Object>>} Normalized restaurant list sorted by distance
  */
-export async function getNearbyRestaurants(lat, lng, radiusMeters = 3000) {
+export async function getNearbyRestaurants(lat, lng, radiusMeters = 3000, locationHint = '') {
   if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) {
-    return [];
+    return getCuratedFallbackRestaurants(19.0896, 72.8656, locationHint);
   }
 
   const cleanRadius = Math.max(500, Math.min(10000, parseInt(radiusMeters, 10) || 3000));
 
-  // Request 12 items for lightweight payload and ultra-fast Overpass response
   const query = `
-    [out:json][timeout:3];
+    [out:json][timeout:2];
     (
       node["amenity"~"restaurant|cafe|fast_food"](around:${cleanRadius},${lat},${lng});
       way["amenity"~"restaurant|cafe|fast_food"](around:${cleanRadius},${lat},${lng});
@@ -935,38 +933,33 @@ export async function getNearbyRestaurants(lat, lng, radiusMeters = 3000) {
 
   let rawElements = null;
 
-  // Ultra-fast check with primary endpoint, fallback immediately if slower than 2.5s
-  for (const endpoint of OVERPASS_ENDPOINTS) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2500);
+  // Ultra-fast check with 1.5s timeout on primary mirror
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1500);
 
-      const url = `${endpoint}?data=${encodeURIComponent(query)}`;
-      const response = await fetch(url, {
-        method: 'GET',
-        signal: controller.signal,
-        headers: {
-          'Accept': 'application/json'
-        }
-      });
-      clearTimeout(timeoutId);
-
-      if (response.ok) {
-        const json = await response.json();
-        if (json && Array.isArray(json.elements) && json.elements.length > 0) {
-          rawElements = json.elements;
-          break;
-        }
+    const url = `${OVERPASS_ENDPOINTS[0]}?data=${encodeURIComponent(query)}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: {
+        'Accept': 'application/json'
       }
-    } catch {
-      // Continue to next mirror or fallback
-      continue;
+    });
+    clearTimeout(timeoutId);
+
+    if (response.ok) {
+      const json = await response.json();
+      if (json && Array.isArray(json.elements) && json.elements.length > 0) {
+        rawElements = json.elements;
+      }
     }
+  } catch {
+    // Graceful fallback to curated data
   }
 
   if (!rawElements || rawElements.length === 0) {
-    console.info('[restaurantService] Fast demo/curated restaurants loaded for coordinates:', lat, lng);
-    return getCuratedFallbackRestaurants(lat, lng);
+    return getCuratedFallbackRestaurants(lat, lng, locationHint);
   }
 
   // Normalize elements
@@ -1007,17 +1000,15 @@ export async function getNearbyRestaurants(lat, lng, radiusMeters = 3000) {
         .filter(Boolean);
     }
 
-    // Optional metadata tags from real OSM attributes
     const phone = tags.phone || tags['contact:phone'] || tags['phone:mobile'] || null;
     const website = tags.website || tags['contact:website'] || tags['url'] || null;
-    const takeaway = tags.takeaway || null; // 'yes', 'no', 'only'
-    const delivery = tags.delivery || null; // 'yes', 'no', 'only'
-    const outdoorSeating = tags.outdoor_seating || null; // 'yes', 'no'
-    const wheelchair = tags.wheelchair || null; // 'yes', 'no', 'limited', 'designated'
-    const internetAccess = tags.internet_access || null; // 'wlan', 'yes', 'no', 'wifi'
-    const smoking = tags.smoking || null; // 'no', 'outside', 'isolated', 'separated', 'yes'
+    const takeaway = tags.takeaway || null;
+    const delivery = tags.delivery || null;
+    const outdoorSeating = tags.outdoor_seating || null;
+    const wheelchair = tags.wheelchair || null;
+    const internetAccess = tags.internet_access || null;
+    const smoking = tags.smoking || null;
 
-    // Real image tags if present in OSM
     const rawImage = tags.image || tags['image:menu'] || null;
     const wikimediaCommons = tags.wikimedia_commons || tags['wikimedia_commons:image'] || null;
     const wikidata = tags.wikidata || null;
@@ -1051,7 +1042,6 @@ export async function getNearbyRestaurants(lat, lng, radiusMeters = 3000) {
       distanceKm
     };
 
-    // Pre-resolve image if real OSM/Wikimedia source exists
     const resolvedImage = resolveRestaurantImage(baseRestaurant);
 
     normalized.push({
@@ -1062,9 +1052,9 @@ export async function getNearbyRestaurants(lat, lng, radiusMeters = 3000) {
     });
   }
 
-  // If after deduplication we have fewer than 6, blend with curated items to ensure a rich 9-card presentation
+  // If after deduplication we have fewer than 9, blend with curated items to ensure a rich 9-card presentation
   if (normalized.length < 9) {
-    const fallbackCurated = getCuratedFallbackRestaurants(lat, lng);
+    const fallbackCurated = getCuratedFallbackRestaurants(lat, lng, locationHint);
     const existingNames = new Set(normalized.map(n => n.name.toLowerCase()));
     for (const f of fallbackCurated) {
       if (!existingNames.has(f.name.toLowerCase())) {
