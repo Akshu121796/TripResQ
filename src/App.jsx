@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   AlertTriangle,
@@ -9,6 +9,8 @@ import {
   Check,
   User,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   ShieldAlert,
   MapPin,
   Filter,
@@ -23,13 +25,12 @@ import {
   Flame,
   AlertCircle,
   Calendar,
+  Edit3,
   RefreshCw
 } from 'lucide-react';
 import './App.css';
-
 import { RecoveryControl } from './components/recovery';
-import { DiningHub } from './components/dining';
-
+import OnboardingGuide from './components/OnboardingGuide';
 
 // --- i18n Translation Dictionary ---
 const TRANSLATIONS = {
@@ -43,7 +44,7 @@ const TRANSLATIONS = {
     signIn: "Sign In",
     signOut: "Sign Out",
     welcome: "Welcome",
-
+    
     // Home Page
     tagline: "Book Seamlessly. Travel Resiliently.",
     subTagline: "TripResQ is the world's first consumer travel platform with a built-in Disruption Recovery Engine. If connections fail, we automatically rebook alternatives in seconds—at no cost to you.",
@@ -69,7 +70,7 @@ const TRANSLATIONS = {
     authPromptDesc: "Build your custom travel routes and let our engine automatically safeguard your connections from cascading delays.",
     noNodesYet: "No travel nodes added yet. Add a Flight, Train, Cab, or Hotel above to start building your timeline.",
     typePlaceholder: "Type location...",
-
+    
     freeCancellation: "Free cancellation up to 24h & automatic missed connection protection.",
     howItWorks: "Smart Trip Protection, Reimagined",
     marketingTitle1: "Automatic Rebooking",
@@ -125,7 +126,7 @@ const TRANSLATIONS = {
     tripRecoveredTitle: "Trip Recovered!",
     tripRecoveredDesc: "We've updated your itinerary vouchers and notified the cab operator and hotel staff. Your new boarding pass is on its way.",
     updatingTimeline: "Updating timeline view...",
-
+    
     budgetTitle: "💰 Delayed Coach Reschedule",
     budgetDesc: "Off-Peak Transit Reschedule",
     budgetDetails: "Reschedule to later connecting transit node. Minimizes immediate cost by absorbing longer delay, backed by compensation voucher.",
@@ -267,7 +268,7 @@ const TRANSLATIONS = {
     signIn: "लॉग इन करें",
     signOut: "लॉग आउट",
     welcome: "स्वागत है",
-
+    
     tagline: "सहजता से बुक करें। सुरक्षित यात्रा करें।",
     subTagline: "TripResQ अंतर्निहित व्यवधान सुधार इंजन के साथ दुनिया का पहला यात्रा मंच है। यदि कोई कनेक्शन विफल होता है, तो हम बिना किसी अतिरिक्त लागत के सेकंडों में विकल्प बुक करते हैं।",
     protectionBadge: "ऑटो-रीबुकिंग सुरक्षा शामिल",
@@ -346,7 +347,7 @@ const TRANSLATIONS = {
     tripRecoveredTitle: "यात्रा सुधारी गई!",
     tripRecoveredDesc: "हमने आपके यात्रा वाउचर अपडेट कर दिए हैं और कैब ऑपरेटर तथा होटल कर्मचारियों को सूचित कर दिया है। आपका नया बोर्डिंग पास भेजा जा रहा है।",
     updatingTimeline: "टाइमलाइन अपडेट हो रही है...",
-
+    
     budgetTitle: "💰 विलंबित कोच पुनर्निर्धारण",
     budgetDesc: "ऑफ-पीक पारगमन पुनर्निर्धारण",
     budgetDetails: "बाद के पारगमन नोड में पुनर्निर्धारित करें। मुआवजा वाउचर द्वारा समर्थित, लंबी देरी को अवशोषित करके तत्काल लागत को कम करता है।",
@@ -485,7 +486,7 @@ const TRANSLATIONS = {
     signIn: "लॉग इन करा",
     signOut: "लॉग आउट",
     welcome: "स्वागत आहे",
-
+    
     tagline: "सहजतेने बुक करा. सुरक्षित प्रवास करा.",
     subTagline: "TripResQ हे अंगभूत व्यत्यय दुरुस्ती इंजिन असलेले जगातील पहिले प्रवास प्लॅटफॉर्म आहे. कनेक्शन अयशस्वी झाल्यास, आम्ही कोणत्याही अतिरिक्त खर्चाशिवाय सेकंदात पर्याय बुक करतो.",
     protectionBadge: "ऑटो-रीबुकिंग संरक्षण समाविष्ट",
@@ -564,7 +565,7 @@ const TRANSLATIONS = {
     tripRecoveredTitle: "प्रवास यशस्वीरित्या सुधारला!",
     tripRecoveredDesc: "आम्ही तुमचे प्रवास व्हाउचर अपडेट केले आहेत आणि कॅब ऑपरेटर व हॉटेल कर्मचाऱ्यांना सूचित केले आहे. तुमचे नवीन बोर्डिंग पास पाठवले जात आहे.",
     updatingTimeline: "कालरेषा अपडेट होत आहे...",
-
+    
     budgetTitle: "💰 विलंबित कोच पुनर्निर्धारण",
     budgetDesc: "ऑफ-पीक ट्रान्झिट पुनर्निर्धारण",
     budgetDetails: "नंतरच्या ट्रान्झिट नोडमध्ये पुनर्निर्धारित करा. भरपाई व्हाउचरद्वारे समर्थित, लांब विलंब शोषून तात्काळ खर्च कमी करते.",
@@ -870,16 +871,146 @@ const RESTAURANTS = [
   }
 ];
 
+// --- Indian Cities for Autocomplete ---
+const INDIAN_CITIES = [
+  { name: 'Mumbai', code: 'BOM', state: 'Maharashtra' },
+  { name: 'Delhi', code: 'DEL', state: 'Delhi' },
+  { name: 'Bengaluru', code: 'BLR', state: 'Karnataka' },
+  { name: 'Hyderabad', code: 'HYD', state: 'Telangana' },
+  { name: 'Chennai', code: 'MAA', state: 'Tamil Nadu' },
+  { name: 'Kolkata', code: 'CCU', state: 'West Bengal' },
+  { name: 'Pune', code: 'PNQ', state: 'Maharashtra' },
+  { name: 'Ahmedabad', code: 'AMD', state: 'Gujarat' },
+  { name: 'Goa', code: 'GOI', state: 'Goa' },
+  { name: 'Jaipur', code: 'JAI', state: 'Rajasthan' },
+  { name: 'Kochi', code: 'COK', state: 'Kerala' },
+  { name: 'Chandigarh', code: 'IXC', state: 'Chandigarh' },
+  { name: 'Lucknow', code: 'LKO', state: 'Uttar Pradesh' },
+  { name: 'Indore', code: 'IDR', state: 'Madhya Pradesh' },
+  { name: 'Nagpur', code: 'NAG', state: 'Maharashtra' },
+  { name: 'Surat', code: 'STV', state: 'Gujarat' },
+  { name: 'Nashik', code: 'ISK', state: 'Maharashtra' },
+  { name: 'Bhopal', code: 'BHO', state: 'Madhya Pradesh' },
+  { name: 'Varanasi', code: 'VNS', state: 'Uttar Pradesh' },
+  { name: 'Amritsar', code: 'ATQ', state: 'Punjab' },
+  { name: 'Thiruvananthapuram', code: 'TRV', state: 'Kerala' },
+  { name: 'Udaipur', code: 'UDR', state: 'Rajasthan' },
+  { name: 'Visakhapatnam', code: 'VTZ', state: 'Andhra Pradesh' },
+  { name: 'Coimbatore', code: 'CJB', state: 'Tamil Nadu' },
+  { name: 'Patna', code: 'PAT', state: 'Bihar' },
+  { name: 'Mangalore', code: 'IXE', state: 'Karnataka' },
+  { name: 'Ranchi', code: 'IXR', state: 'Jharkhand' },
+  { name: 'Dehradun', code: 'DED', state: 'Uttarakhand' },
+  { name: 'Srinagar', code: 'SXR', state: 'Jammu & Kashmir' },
+  { name: 'Agra', code: 'AGR', state: 'Uttar Pradesh' }
+];
+
+// --- City Autocomplete Component ---
+function CityAutocomplete({ value, onChange, placeholder, required }) {
+  const [query, setQuery] = useState(value || '');
+  const [isOpen, setIsOpen] = useState(false);
+  const [highlightIdx, setHighlightIdx] = useState(-1);
+  const wrapperRef = useRef(null);
+
+  // Sync external value
+  useEffect(() => { setQuery(value || ''); }, [value]);
+
+  const filtered = query.trim().length > 0
+    ? INDIAN_CITIES.filter(c =>
+        c.name.toLowerCase().includes(query.toLowerCase()) ||
+        c.code.toLowerCase().includes(query.toLowerCase()) ||
+        c.state.toLowerCase().includes(query.toLowerCase())
+      ).slice(0, 6)
+    : INDIAN_CITIES.slice(0, 6);
+
+  const selectCity = (city) => {
+    setQuery(city.name);
+    onChange(city.name);
+    setIsOpen(false);
+    setHighlightIdx(-1);
+  };
+
+  const handleKeyDown = (e) => {
+    if (!isOpen && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      setIsOpen(true);
+      return;
+    }
+    if (!isOpen) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightIdx(prev => Math.min(prev + 1, filtered.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightIdx(prev => Math.max(prev - 1, 0));
+    } else if (e.key === 'Enter' && highlightIdx >= 0 && filtered[highlightIdx]) {
+      e.preventDefault();
+      selectCity(filtered[highlightIdx]);
+    } else if (e.key === 'Escape') {
+      setIsOpen(false);
+    }
+  };
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <MapPin className="absolute left-3 top-3 w-4 h-4 text-slate-400 pointer-events-none" />
+      <input
+        type="text"
+        required={required}
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          onChange(e.target.value);
+          setIsOpen(true);
+          setHighlightIdx(-1);
+        }}
+        onFocus={() => setIsOpen(true)}
+        onKeyDown={handleKeyDown}
+        placeholder={placeholder}
+        className="w-full h-10 pl-9 pr-8 rounded-lg border border-slate-205 text-xs font-semibold focus:outline-none focus:border-[#287DFA] focus:ring-2 focus:ring-[#287DFA]/10 transition"
+        autoComplete="off"
+        aria-label={placeholder}
+      />
+      <ChevronDown className={`absolute right-2.5 top-3 w-4 h-4 text-slate-400 pointer-events-none transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+
+      {isOpen && filtered.length > 0 && (
+        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 max-h-52 overflow-y-auto">
+          {filtered.map((city, idx) => (
+            <button
+              key={city.code}
+              type="button"
+              onClick={() => selectCity(city)}
+              onMouseEnter={() => setHighlightIdx(idx)}
+              className={`w-full text-left px-3 py-2.5 text-xs flex items-center gap-3 transition cursor-pointer ${
+                idx === highlightIdx ? 'bg-[#EAF3FF] text-[#287DFA]' : 'text-slate-700 hover:bg-slate-50'
+              } ${idx === 0 ? 'rounded-t-xl' : ''} ${idx === filtered.length - 1 ? 'rounded-b-xl' : ''}`}
+            >
+              <MapPin className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+              <div className="flex-1 min-w-0">
+                <span className="font-bold">{city.name}</span>
+                <span className="text-slate-400 ml-1.5 font-mono text-[10px]">({city.code})</span>
+              </div>
+              <span className="text-[10px] text-slate-400 shrink-0">{city.state}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Seed helper to construct the default trip (Delhi → Goa Family Vacation)
 const seedInitialTripNodes = () => {
-
-  const startTime = "08:00";
-  const transitEnd = "11:00"; // 3 hours duration
-  const cabStart = "11:30"; // 30 mins buffer
-  const cabEnd = "12:15"; // 45 mins cab ride
-  const checkinTime = "13:00"; // 45 mins buffer
-
-
   return [
     {
       id: 'node-1',
@@ -963,14 +1094,14 @@ function addMinutesToTime(timeStr, mins) {
 // Helper to get buffer minutes between end of node 1 and start of node 2
 function getMinutesBetween(time1, time2) {
   if (!time1 || !time2 || time1 === 'Onwards' || time2 === 'Onwards' || time1.includes('CANCELLED') || time2.includes('CANCELLED') || time1.includes('COMPROMISED') || time2.includes('COMPROMISED')) return 0;
-
+  
   const cleanT1 = time1.split(' ')[0];
   const cleanT2 = time2.split(' ')[0];
-
+  
   const [h1, m1] = cleanT1.split(':').map(Number);
   const [h2, m2] = cleanT2.split(':').map(Number);
   if (isNaN(h1) || isNaN(m1) || isNaN(h2) || isNaN(m2)) return 0;
-
+  
   return (h2 * 60 + m2) - (h1 * 60 + m1);
 }
 
@@ -982,8 +1113,8 @@ const formatGraphNodes = (nodes, existingNodes = []) => {
     if (n.status === 'AT_RISK') frontendStatus = 'delayed';
     if (n.status === 'BROKEN') frontendStatus = 'broken';
 
-    const actualStartStr = n.start_time && n.start_time.includes('T') ? n.start_time.split('T')[1].substring(0, 5) : (n.start_time || '08:00');
-    const actualEndStr = n.end_time && n.end_time.includes('T') ? n.end_time.split('T')[1].substring(0, 5) : (n.end_time || '09:00');
+    const actualStartStr = n.start_time && n.start_time.includes('T') ? n.start_time.split('T')[1].substring(0,5) : (n.start_time || '08:00');
+    const actualEndStr = n.end_time && n.end_time.includes('T') ? n.end_time.split('T')[1].substring(0,5) : (n.end_time || '09:00');
 
     // Find matching existing node to preserve OG baseline scheduled time
     let existing = (existingNodes || []).find(ex => ex.id === n.id);
@@ -1033,246 +1164,11 @@ function generateTripRef() {
   return "TR-" + Math.floor(100000 + Math.random() * 900000);
 }
 
-// Risk level -> tailwind color tokens, shared by the card + badges
-const RISK_STYLES = {
-  CRITICAL: { chip: 'bg-red-100 text-red-700 border-red-200', bar: 'bg-red-500', ring: 'border-red-200 bg-red-50/40' },
-  HIGH: { chip: 'bg-orange-100 text-[#E06600] border-orange-200', bar: 'bg-[#FF7700]', ring: 'border-orange-200 bg-orange-50/40' },
-  MEDIUM: { chip: 'bg-amber-100 text-amber-700 border-amber-200', bar: 'bg-amber-400', ring: 'border-amber-200 bg-amber-50/30' },
-  LOW: { chip: 'bg-emerald-100 text-emerald-700 border-emerald-200', bar: 'bg-emerald-500', ring: 'border-emerald-200 bg-emerald-50/20' },
-};
-
-// One connection's proactive Risk Radar card - shows explainable rule-based scoring,
-// historical transport stats (if available), connection buffer analysis, seasonal conditions,
-// data confidence, and pre-computed buffer action.
-// One connection's proactive Risk Radar card - shows explainable rule-based scoring,
-// conditional historical evidence, connection buffer analysis, and seasonal conditions.
-function RiskConnectionCard({ conn, plan, planLoading, applying, onPrecompute, onApply }) {
-  const styles = RISK_STYLES[conn.risk_level] || RISK_STYLES.LOW;
-  const applyResult = plan && plan.applyResult;
-  const hist = conn.factors?.historical;
-  const confidence = conn.data_confidence || { level: 'INSUFFICIENT_DATA', score: 0 };
-  const seas = conn.factors?.seasonal;
-  const hasHistory = hist?.available;
-
-  return (
-    <div className={`rounded-xl border p-4 sm:p-5 flex flex-col gap-4 ${styles.ring}`}>
-      {/* Top Header: Badge & Score */}
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-slate-400 mb-1">
-            RISK RADAR
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className={`px-2.5 py-0.5 rounded-full text-xs font-extrabold uppercase tracking-wide border ${styles.chip}`}>
-              {conn.risk_level} • {conn.risk_score}/100
-            </span>
-            {conn.proactively_flagged && (
-              <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wide bg-slate-900 text-white flex items-center gap-1">
-                <AlertTriangle className="w-2.5 h-2.5 text-amber-400" /> Flagged Pre-Disruption
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Historical Data Quality pill (rendered ONLY when historical data exists) */}
-        {hasHistory && (
-          <div className="text-right shrink-0">
-            <div className="text-xs font-bold text-slate-800">
-              Historical Data Quality: <span className="font-extrabold text-[#287DFA]">{confidence.level}</span>
-            </div>
-            <div className="text-[10px] text-slate-400">
-              {hist.sample_size} journeys analyzed
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Connection Flow Description */}
-      <div className="bg-white/80 rounded-lg p-3 border border-slate-200/60 flex flex-col gap-1 text-xs">
-        <div className="font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
-          <span>{conn.source_title}</span>
-          {conn.source_origin && conn.source_destination && (
-            <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold">
-              {conn.source_origin} → {conn.source_destination}
-            </span>
-          )}
-        </div>
-        <div className="text-slate-400 text-[11px] font-mono pl-2 flex items-center gap-1">
-          <span>↓ connects to</span>
-        </div>
-        <div className="font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
-          <span>{conn.target_title}</span>
-          {conn.target_location && (
-            <span className="font-normal text-slate-500 text-[11px]">
-              ({conn.target_location.split('•')[0].trim()})
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Factor Cards: 3-column when history exists, 2-column when history is absent */}
-      {hasHistory ? (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-          {/* 1. Historical Delay Evidence */}
-          <div className="p-3 bg-white/70 rounded-lg border border-slate-200/50 flex flex-col gap-1.5">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              Historical Delay Evidence
-            </div>
-            <div className="flex flex-col gap-1 text-[11px] text-slate-700 mt-0.5">
-              <div><b className="text-slate-900 font-extrabold">{Math.round(hist.delayed_30_rate * 100)}%</b> delayed 30+ min</div>
-              <div><b className="text-slate-900 font-extrabold">{hist.avg_delay_minutes} min</b> avg delay</div>
-              <div><b className="text-slate-900 font-extrabold">{hist.sample_size}</b> journeys</div>
-              <div className="text-[10px] text-slate-500 mt-0.5 pt-1 border-t border-slate-200/40">
-                Data quality: <b className="text-slate-800">{confidence.level}</b>
-              </div>
-            </div>
-          </div>
-
-          {/* 2. Connection Buffer */}
-          <div className="p-3 bg-white/70 rounded-lg border border-slate-200/50 flex flex-col gap-1.5">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              Connection Buffer
-            </div>
-            <div className="flex flex-col gap-1 text-[11px] text-slate-700 mt-0.5">
-              <div><b className="text-slate-900 font-extrabold">{conn.connection_buffer_minutes} min</b> available</div>
-              <div><b className="text-slate-900 font-extrabold">{conn.safe_buffer_minutes || 30} min</b> safe target</div>
-              <div className="mt-0.5 pt-1 border-t border-slate-200/40">
-                {conn.recommended_extra_buffer_minutes > 0 ? (
-                  <span className="text-amber-600 font-bold">Tight buffer (+{conn.recommended_extra_buffer_minutes}m needed)</span>
-                ) : (
-                  <span className="text-emerald-700 font-bold">Comfortably buffered</span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* 3. Seasonal Conditions */}
-          <div className="p-3 bg-white/70 rounded-lg border border-slate-200/50 flex flex-col gap-1.5">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              Seasonal Conditions
-            </div>
-            <div className="flex flex-col gap-1 text-[11px] text-slate-700 mt-0.5">
-              <div>Conditions: <b className="text-slate-900 font-extrabold">
-                {seas?.raw_score >= 0.5 ? 'Severe' : seas?.raw_score >= 0.3 ? 'Moderate' : 'Favorable'}
-              </b></div>
-              <div>Severity: <b className="text-slate-900 font-extrabold">
-                {seas?.raw_score >= 0.5 ? 'High seasonal risk' : seas?.raw_score >= 0.3 ? 'Moderate seasonal risk' : 'Low seasonal risk'}
-              </b></div>
-              <div className="text-[10px] text-slate-400 font-mono mt-0.5 pt-1 border-t border-slate-200/40">
-                Region: {seas?.location_keyword || 'standard'}
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-            {/* 1. Connection Buffer */}
-            <div className="p-3 bg-white/70 rounded-lg border border-slate-200/50 flex flex-col gap-1.5">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                Connection Buffer
-              </div>
-              <div className="flex flex-col gap-1 text-[11px] text-slate-700 mt-0.5">
-                <div><b className="text-slate-900 font-extrabold">{conn.connection_buffer_minutes} min</b> available</div>
-                <div><b className="text-slate-900 font-extrabold">{conn.safe_buffer_minutes || 30} min</b> recommended safe buffer</div>
-                <div className="mt-0.5 pt-1 border-t border-slate-200/40">
-                  {conn.recommended_extra_buffer_minutes > 0 ? (
-                    <span className="text-amber-600 font-bold">Tight buffer (+{conn.recommended_extra_buffer_minutes}m needed)</span>
-                  ) : (
-                    <span className="text-emerald-700 font-bold">Comfortably buffered</span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* 2. Seasonal Conditions */}
-            <div className="p-3 bg-white/70 rounded-lg border border-slate-200/50 flex flex-col gap-1.5">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                Seasonal Conditions
-              </div>
-              <div className="flex flex-col gap-1 text-[11px] text-slate-700 mt-0.5">
-                <div>Conditions: <b className="text-slate-900 font-extrabold">
-                  {seas?.raw_score >= 0.5 ? 'Severe' : seas?.raw_score >= 0.3 ? 'Moderate' : 'Favorable'}
-                </b></div>
-                <div>Severity: <b className="text-slate-900 font-extrabold">
-                  {seas?.raw_score >= 0.5 ? 'High seasonal risk' : seas?.raw_score >= 0.3 ? 'Moderate seasonal risk' : 'Low seasonal risk'}
-                </b></div>
-                <div className="text-[10px] text-slate-400 font-mono mt-0.5 pt-1 border-t border-slate-200/40">
-                  Region: {seas?.location_keyword || 'standard'}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <p className="text-[11px] text-slate-400 mt-2.5 flex items-center gap-1.5 font-sans">
-            <span className="text-slate-400">ⓘ</span>
-            <span>Historical route evidence is not available for this connection. Score currently uses available factors.</span>
-          </p>
-        </div>
-      )}
-
-      {/* Footer: Last evaluated timestamp & Action */}
-      <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-slate-200/50">
-        <div className="text-[10px] text-slate-400 font-mono">
-          Last evaluated {conn.last_evaluated_at ? new Date(conn.last_evaluated_at).toLocaleTimeString() : 'Just now'}
-        </div>
-
-        {!plan && (
-          <button
-            onClick={onPrecompute}
-            disabled={planLoading}
-            className="px-3 py-1.5 bg-slate-950 text-white text-[11px] font-bold rounded-lg hover:bg-slate-900 transition cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
-          >
-            {planLoading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-            {planLoading ? 'Pre-computing…' : 'Pre-compute Buffer Plan'}
-          </button>
-        )}
-      </div>
-
-      {/* Buffer Plan Drawer */}
-      {plan && !applyResult && (
-        <div className="border-t border-slate-200/70 pt-3 flex flex-col gap-2 bg-slate-50/70 -mx-4 -mb-4 p-4 rounded-b-xl">
-          <div className="flex items-center gap-3 text-xs">
-            <span className="text-slate-600">Buffer: <b>{plan.current.buffer_minutes}m</b> → <b className="text-emerald-600">{plan.projected.buffer_minutes}m</b></span>
-            <span className="text-slate-300">|</span>
-            <span className="text-slate-600">Risk Radar: <b>{plan.current.risk_score}/100</b> → <b className="text-emerald-600">{plan.projected.risk_score}/100</b></span>
-          </div>
-          <ul className="flex flex-col gap-1 mt-1">
-            {plan.steps.map((s, i) => (
-              <li key={i} className="text-[11px] text-slate-700 flex items-start gap-1.5">
-                <ChevronRight className="w-3 h-3 mt-0.5 text-slate-400 shrink-0" />
-                <span>{s.detail}</span>
-              </li>
-            ))}
-          </ul>
-          {plan.can_auto_apply && (
-            <button
-              onClick={onApply}
-              disabled={applying}
-              className="self-start px-3.5 py-1.5 bg-[#287DFA] text-white text-[11px] font-bold rounded-lg hover:bg-[#1C6BDB] transition cursor-pointer disabled:opacity-50 flex items-center gap-1.5 mt-1"
-            >
-              {applying ? <RefreshCw className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
-              {applying ? 'Applying…' : 'Apply buffer plan now'}
-            </button>
-          )}
-        </div>
-      )}
-
-      {applyResult && (
-        <div className="border-t border-slate-200/70 pt-3 flex items-center gap-2 text-[11px] font-bold text-emerald-700 bg-emerald-50/60 -mx-4 -mb-4 p-3 rounded-b-xl">
-          <CheckCircle className="w-4 h-4 text-emerald-600" />
-          {applyResult.applied ? applyResult.message : applyResult.reason}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function App() {
   const [currentLanguage, setCurrentLanguage] = useState('en');
   const [currentPage, setCurrentPage] = useState('home');
   const [disruptionState, setDisruptionState] = useState('healthy'); // 'healthy' | 'disrupted' | 'resolved'
-
+  
   // Auth state
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [userAuth, setUserAuth] = useState({
@@ -1282,7 +1178,7 @@ function App() {
 
   // Search State Tab: flights | trains | cabs | hotels
   const [searchTab, setSearchTab] = useState('flights');
-
+  
   // Custom Node Builder Input States
   const [builderFrom, setBuilderFrom] = useState('');
   const [builderTo, setBuilderTo] = useState('');
@@ -1299,20 +1195,12 @@ function App() {
   const [builderNodes, setBuilderNodes] = useState([]);
 
   // Active Trip Graph Nodes State
-  const [tripRefNum, setTripRefNum] = useState('TR-998827');
-  const [currentTrip, setCurrentTrip] = useState(seedInitialTripNodes);
+  const [tripRefNum, setTripRefNum] = useState('');
+  const [currentTrip, setCurrentTrip] = useState([]);
   const [originalTripNodes, setOriginalTripNodes] = useState([]);
   const [recoveryResult, setRecoveryResult] = useState(null);
-  const [recentTrips, setRecentTrips] = useState([]);
-
-  // --- Risk Radar / Confidence Score (proactive, pre-disruption) ---
   const [riskRadar, setRiskRadar] = useState(null);
-  const [riskRadarLoading, setRiskRadarLoading] = useState(false);
-  const [riskAlerts, setRiskAlerts] = useState([]);
-  const [riskToast, setRiskToast] = useState(null); // most recent newly-detected alert, shown briefly
-  const [bufferPlans, setBufferPlans] = useState({}); // edgeId -> plan
-  const [bufferPlanLoadingId, setBufferPlanLoadingId] = useState(null);
-  const [bufferApplyingId, setBufferApplyingId] = useState(null);
+  const [recentTrips, setRecentTrips] = useState([]);
 
   // Chaos Lab Disruption Inputs
   const [selectedDisruptNode, setSelectedDisruptNode] = useState('');
@@ -1326,9 +1214,6 @@ function App() {
     brokenConnections: 0,
     affectedNodes: 0
   });
-  
-  const [isDisrupting, setIsDisrupting] = useState(false);
-  const [disruptionError, setDisruptionError] = useState(null);
 
   // Restaurant Filters
   const [restaurantFilter, setRestaurantFilter] = useState('All');
@@ -1367,7 +1252,7 @@ function App() {
     return TRANSLATIONS[currentLanguage][key] || TRANSLATIONS['en'][key] || key;
   };
 
-
+  
   // Fetch recent trips from backend
   const fetchRecentTrips = async () => {
     try {
@@ -1381,6 +1266,18 @@ function App() {
     }
   };
 
+  // Fetch risk radar data for current trip
+  const fetchRiskRadar = async (tripId) => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/trips/${tripId}/risk-radar`);
+      if (res.ok) {
+        const data = await res.json();
+        setRiskRadar(data);
+      }
+    } catch (err) {
+      console.error('Error fetching risk radar:', err);
+    }
+  };
 
   const initializeSeedTrip = async () => {
     try {
@@ -1413,106 +1310,9 @@ function App() {
     }
   };
 
-  // --- Risk Radar: proactive background scoring (BEFORE disruption happens) ---
-  const fetchRiskRadar = async (tripId, force = false) => {
-    if (!tripId) return;
-    setRiskRadarLoading(true);
-    try {
-      const url = `http://localhost:5000/api/trips/${tripId}/risk-radar${force ? '?refresh=true' : ''}`;
-      const res = await fetch(url);
-      if (!res.ok) return;
-      const data = await res.json();
-      setRiskRadar(data);
-    } catch (err) {
-      console.error('Error fetching risk radar:', err);
-    } finally {
-      setRiskRadarLoading(false);
-    }
-  };
-
-  const fetchRiskAlerts = async (tripId) => {
-    if (!tripId) return;
-    try {
-      const res = await fetch(`http://localhost:5000/api/trips/${tripId}/risk-radar/alerts`);
-      if (!res.ok) return;
-      const data = await res.json();
-      setRiskAlerts(prev => {
-        const prevIds = new Set(prev.map(a => a.target_node_id + a.detected_at));
-        const incoming = data.alerts || [];
-        const brandNew = incoming.find(a => !prevIds.has(a.target_node_id + a.detected_at));
-        if (brandNew && prev.length > 0) {
-          setRiskToast(brandNew);
-          setTimeout(() => setRiskToast(null), 8000);
-        }
-        return incoming;
-      });
-    } catch (err) {
-      console.error('Error fetching risk alerts:', err);
-    }
-  };
-
-  const fetchBufferPlan = async (tripId, edgeId) => {
-    setBufferPlanLoadingId(edgeId);
-    try {
-      const res = await fetch(`http://localhost:5000/api/trips/${tripId}/connections/${edgeId}/buffer-plan`, {
-        method: 'POST'
-      });
-      if (!res.ok) return;
-      const plan = await res.json();
-      setBufferPlans(prev => ({ ...prev, [edgeId]: plan }));
-    } catch (err) {
-      console.error('Error generating buffer plan:', err);
-    } finally {
-      setBufferPlanLoadingId(null);
-    }
-  };
-
-  const applyBufferPlanForEdge = async (tripId, edgeId) => {
-    setBufferApplyingId(edgeId);
-    try {
-      const res = await fetch(`http://localhost:5000/api/trips/${tripId}/connections/${edgeId}/buffer-plan/apply`, {
-        method: 'POST'
-      });
-      if (!res.ok) return;
-      const result = await res.json();
-      setBufferPlans(prev => ({
-        ...prev,
-        [edgeId]: { ...prev[edgeId], applyResult: result }
-      }));
-      // Refresh the graph + risk radar so the shifted node/buffer show up everywhere
-      const graphRes = await fetch(`http://localhost:5000/api/trips/${tripId}/graph`);
-      const graphData = await graphRes.json();
-      const formattedNodes = formatGraphNodes(graphData.nodes, currentTrip);
-      setCurrentTrip(formattedNodes);
-      fetchRiskRadar(tripId, true);
-    } catch (err) {
-      console.error('Error applying buffer plan:', err);
-    } finally {
-      setBufferApplyingId(null);
-    }
-  };
-
   useEffect(() => {
     initializeSeedTrip();
   }, []);
-
-  // Poll the Risk Radar + proactive alert feed while viewing the trip page.
-  // The heavy lifting (rescoring every connection) happens in a background
-  // thread on the server every ~45s - this just polls the cheap cache.
-  useEffect(() => {
-    const isRealTripId = tripRefNum && !tripRefNum.startsWith('TR-');
-    if (currentPage !== 'my-trip' || !isRealTripId) return;
-
-    fetchRiskRadar(tripRefNum);
-    fetchRiskAlerts(tripRefNum);
-
-    const interval = setInterval(() => {
-      fetchRiskRadar(tripRefNum);
-      fetchRiskAlerts(tripRefNum);
-    }, 20000);
-
-    return () => clearInterval(interval);
-  }, [currentPage, tripRefNum]);
 
   useEffect(() => {
     if (currentTrip && currentTrip.length > 0) {
@@ -1530,50 +1330,30 @@ function App() {
   // Add node dynamically as user inputs details in the form
   const handleAddBuilderNode = (e) => {
     e.preventDefault();
-
+    
     let title = '';
     let info = '';
     let type = searchTab; // flights | trains | cabs | hotels
     let from = builderFrom.trim();
     let to = builderTo.trim();
-
-    let origin = null;
-    let destination = null;
-    let operator = null;
-    let service_number = null;
-
+    
     if (type === 'flights') {
       type = 'flight';
       title = builderAirways.trim() || 'Custom Flight';
       info = 'Terminal Gateway';
-      origin = from;
-      destination = to;
-      operator = builderAirways.trim() || 'Airline';
-      const svcMatch = title.match(/([A-Z0-9]{2,3}[-\s]?\d{3,4})/i);
-      service_number = svcMatch ? svcMatch[0].replace(' ', '-') : '';
     } else if (type === 'trains') {
       type = 'train';
       title = builderTrainName.trim() || 'Custom Train';
       info = 'Platform Route';
-      origin = from;
-      destination = to;
-      operator = 'Indian Railways';
-      const svcMatch = title.match(/([A-Z0-9]{2,6}[-\s]?\d{3,5})/i);
-      service_number = svcMatch ? svcMatch[0].replace(' ', '-') : '';
     } else if (type === 'cabs') {
       type = 'cab';
       title = builderCabService.trim() || 'Custom Cab';
       info = 'Pickup Area';
-      origin = from;
-      destination = to;
-      operator = builderCabService.trim() || 'Cab Service';
     } else if (type === 'hotels') {
       type = 'hotel';
       title = builderHotelName.trim() || 'Custom Hotel Stay';
       info = 'Reception Lobby';
-      to = from;
-      origin = from;
-      destination = from;
+      to = from; 
     }
 
     if (!from && type !== 'hotel') {
@@ -1596,10 +1376,6 @@ function App() {
       id: `node-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       type,
       title,
-      origin,
-      destination,
-      operator,
-      service_number,
       sub: type === 'hotel' ? `${to}` : `${from} → ${to}`,
       date: builderDate || new Date().toISOString().split('T')[0],
       scheduledStart,
@@ -1665,7 +1441,7 @@ function App() {
         const nodeDate = node.date || new Date().toISOString().split('T')[0];
         const st = `${nodeDate}T${node.scheduledStart}:00Z`;
         const et = node.scheduledEnd === 'Onwards' ? `${nodeDate}T23:59:59Z` : `${nodeDate}T${node.scheduledEnd}:00Z`;
-
+        
         let hardCutoff = null;
         if (node.type === 'cab') {
           hardCutoff = addMinutesToISO(st, 30);
@@ -1678,10 +1454,6 @@ function App() {
           node_type: (node.type || 'flight').toUpperCase(),
           title: node.title,
           location: node.info || node.sub || '',
-          origin: node.origin || null,
-          destination: node.destination || null,
-          operator: node.operator || null,
-          service_number: node.service_number || null,
           start_time: st,
           end_time: et
         };
@@ -1698,7 +1470,7 @@ function App() {
 
       const graphRes = await fetch(`http://localhost:5000/api/trips/${tripId}/graph`);
       const graphData = await graphRes.json();
-
+      
       const formattedNodes = formatGraphNodes(graphData.nodes);
 
       setCurrentTrip(formattedNodes);
@@ -1721,14 +1493,16 @@ function App() {
   const triggerDisruptionCascade = async (nodeId, type, delayMins, reason) => {
     const targetId = nodeId || selectedDisruptNode || (currentTrip.length > 0 ? currentTrip[0].id : '');
     if (!targetId) {
-      setDisruptionError("Please select a travel node to disrupt!");
+      alert("Please select a travel node to disrupt!");
       return;
     }
-    
-    setIsDisrupting(true);
-    setDisruptionError(null);
+    if (!tripRefNum) {
+      alert("Trip not loaded yet. Please wait for the trip to initialize.");
+      return;
+    }
     try {
       const delayToApply = (type === 'cancel' || type === 'lockout') ? 360 : (delayMins || 180);
+      console.log(`[TripResQ] Disrupting node=${targetId} trip=${tripRefNum} type=${type} delay=${delayToApply}`);
       const res = await fetch(`http://localhost:5000/api/trips/${tripRefNum}/disrupt`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1740,24 +1514,23 @@ function App() {
         })
       });
       const data = await res.json();
+      console.log('[TripResQ] Disruption response:', { metrics: data.metrics, graphNodes: data.updated_graph?.nodes?.length });
       if (data.error) {
-        setDisruptionError(`Disruption Error: ${data.error}`);
-        return;
+         alert(`Disruption Error: ${data.error}`);
+         return;
       }
-      // Preserve original scheduled times as the baseline
-      const targetBaseline =
-        originalTripNodes && originalTripNodes.length > 0
-          ? originalTripNodes
-          : currentTrip;
+      
+      // Preserve OG scheduled times by passing originalTripNodes baseline
+      const targetBaseline = (originalTripNodes && originalTripNodes.length > 0) ? originalTripNodes : currentTrip;
+      const formattedNodes = formatGraphNodes(data.updated_graph?.nodes || [], targetBaseline);
 
-      const formattedNodes = formatGraphNodes(
-        data.updated_graph?.nodes || [],
-        targetBaseline
-      );
-      const backendMetrics = data.metrics || {};
+      // Parse metrics from backend response — available at top level and inside impacts
+      const backendMetrics = data.metrics || data.impacts?.metrics || {};
       const brokenCount = backendMetrics.brokenConnections ?? backendMetrics.broken_connections ?? (data.updated_graph?.nodes || []).filter(n => n.status === 'BROKEN').length;
       const affectedCount = backendMetrics.affectedNodes ?? backendMetrics.affected_nodes ?? (data.updated_graph?.nodes || []).filter(n => n.status !== 'OK').length;
       const downstreamDelay = backendMetrics.delayMinutes ?? backendMetrics.delay_minutes ?? delayToApply;
+
+      console.log('[TripResQ] Setting metrics:', { delayMinutes: downstreamDelay, brokenConnections: brokenCount, affectedNodes: affectedCount });
 
       setCurrentTrip(formattedNodes);
       setDisruptionState('disrupted');
@@ -1768,13 +1541,13 @@ function App() {
         affectedNodes: affectedCount
       });
     } catch (err) {
-      console.error(err);
-      alert('Failed to execute disruption simulation');
+      console.error('[TripResQ] Disruption error:', err);
+      alert('Failed to execute disruption simulation. Ensure the Flask backend is running at http://localhost:5000.');
     }
   };
 
-
-
+  
+  
 
   const handleResetJourney = async () => {
     try {
@@ -1796,7 +1569,6 @@ function App() {
       if (formattedNodes.length > 0) {
         setSelectedDisruptNode(formattedNodes[0].id);
       }
-
       setTripRefNum(tripId);
       setDisruptionState('healthy');
       setRecoveryResult(null);
@@ -1874,15 +1646,6 @@ function App() {
     setCurrentPage('my-trip');
   };
 
-  const handleResetDemo = () => {
-    setCurrentTrip([]);
-    setDisruptionState('healthy');
-    setRecoveryResult(null);
-    setImpactMetrics({ delayMinutes: 0, brokenConnections: 0, affectedNodes: 0 });
-    setDisruptionError(null);
-    initializeSeedTrip();
-  };
-
   // Chatbot Query Submit Handler
   const handleChatSubmit = (e) => {
     e.preventDefault();
@@ -1896,7 +1659,7 @@ function App() {
 
     setTimeout(() => {
       let botResponse = t('chatbotDefaultResponse');
-
+      
       if (textQuery.includes('delay') || textQuery.includes('late')) {
         botResponse = t('chatbotDelayResponse');
       } else if (textQuery.includes('refund') || textQuery.includes('cancel')) {
@@ -1956,52 +1719,33 @@ function App() {
     setAuthName('');
     setAuthEmail('');
     setAuthPassword('');
-    setCurrentPage('home');
+    setCurrentPage('home'); 
   };
 
   // Restaurant destination: use LAST node's destination or hotel city
   const lastNode = currentTrip[currentTrip.length - 1];
-
   const activeDestination = (() => {
     // Try hotel/destination node's location for city
     if (lastNode?.type === 'hotel') {
       const loc = lastNode.info || lastNode.sub || '';
-
       if (loc.toLowerCase().includes('goa')) return 'Goa';
       if (loc.toLowerCase().includes('pune')) return 'Pune';
       if (loc.toLowerCase().includes('mumbai')) return 'Mumbai';
       if (loc.toLowerCase().includes('delhi')) return 'Delhi';
     }
-
-    // Try last node's destination
+    // Try last node's destination from sub field
     const lastSub = lastNode?.sub || '';
-
     if (lastSub.includes('→')) {
-      return lastSub
-        .split('→')
-        .pop()
-        .trim()
-        .split(' ')[0]
-        .split('(')[0]
-        .trim();
+      return lastSub.split('→').pop().trim().split(' ')[0].split('(')[0].trim();
     }
-
     // Fallback to first node's arrival
     const firstSub = currentTrip[0]?.sub || '';
-
     if (firstSub.includes('→')) {
-      return firstSub
-        .split('→')
-        .pop()
-        .trim()
-        .split(' ')[0]
-        .split('(')[0]
-        .trim();
+      return firstSub.split('→').pop().trim().split(' ')[0].split('(')[0].trim();
     }
-
     return 'Goa';
   })();
-
+  
   const filteredRestaurants = RESTAURANTS.filter(r => {
     const isCity = r.city.toLowerCase() === activeDestination.toLowerCase();
     if (!isCity) return false;
@@ -2011,41 +1755,12 @@ function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-850 flex flex-col justify-between selection:bg-[#287DFA] selection:text-white font-sans antialiased overflow-x-hidden">
-
-      {/* --- Proactive Risk Radar Toast (fires when a connection newly crosses into HIGH/CRITICAL) --- */}
-      <AnimatePresence>
-        {riskToast && (
-          <motion.div
-            key="risk-toast"
-            initial={{ opacity: 0, y: -20, x: '-50%' }}
-            animate={{ opacity: 1, y: 0, x: '-50%' }}
-            exit={{ opacity: 0, y: -20, x: '-50%' }}
-            className="fixed top-4 left-1/2 z-50 w-[92%] sm:w-auto sm:max-w-md bg-slate-950 text-white rounded-xl shadow-2xl px-4 py-3 flex items-start gap-3"
-          >
-            <div className="p-1.5 rounded-lg bg-[#FF7700] shrink-0">
-              <Zap className="w-4 h-4" />
-            </div>
-            <div className="flex-1">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-orange-300">
-                Risk Radar caught this before it happened
-              </p>
-              <p className="text-xs mt-0.5 leading-relaxed">{riskToast.message}</p>
-            </div>
-            <button
-              onClick={() => setRiskToast(null)}
-              className="text-slate-400 hover:text-white transition cursor-pointer shrink-0 text-xs font-bold"
-            >
-              ✕
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
+      
       {/* --- Global Navigation Header --- */}
       <header className="sticky top-0 z-40 bg-white border-b border-slate-105 shadow-sm px-4 sm:px-6 py-4 flex flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-4 sm:gap-8">
           {/* Logo */}
-          <button
+          <button 
             onClick={() => setCurrentPage('home')}
             className="flex items-center gap-2 text-xl sm:text-2xl font-bold tracking-tight text-[#287DFA] focus:outline-none cursor-pointer"
           >
@@ -2058,14 +1773,13 @@ function App() {
           {/* Desktop Nav Links - Gated by Login */}
           {userAuth.loggedIn && (
             <nav className="hidden md:flex items-center gap-6 text-sm font-semibold text-slate-655">
-              <button
+              <button 
                 onClick={() => setCurrentPage('home')}
                 className={`hover:text-[#287DFA] transition py-1 cursor-pointer ${currentPage === 'home' ? 'text-[#287DFA] border-b-2 border-[#287DFA]' : ''}`}
               >
                 {t('navHome')}
               </button>
-              <button
-                data-tour="my-trip"
+              <button 
                 onClick={() => setCurrentPage('my-trip')}
                 className={`hover:text-[#287DFA] transition py-1 flex items-center gap-1.5 cursor-pointer ${currentPage === 'my-trip' ? 'text-[#287DFA] border-b-2 border-[#287DFA]' : ''}`}
               >
@@ -2077,13 +1791,13 @@ function App() {
                   </span>
                 )}
               </button>
-              <button
+              <button 
                 onClick={() => setCurrentPage('restaurants')}
                 className={`hover:text-[#287DFA] transition py-1 cursor-pointer ${currentPage === 'restaurants' ? 'text-[#287DFA] border-b-2 border-[#287DFA]' : ''}`}
               >
                 {t('navRestaurants')}
               </button>
-              <button
+              <button 
                 onClick={() => setCurrentPage('support')}
                 className={`hover:text-[#287DFA] transition py-1 cursor-pointer ${currentPage === 'support' ? 'text-[#287DFA] border-b-2 border-[#287DFA]' : ''}`}
               >
@@ -2095,22 +1809,15 @@ function App() {
 
         {/* Right Controls */}
         <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
-          <button
-            onClick={handleResetDemo}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] sm:text-xs font-bold rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900 transition duration-200 cursor-pointer"
-            aria-label="Reset Demo"
-          >
-            <RefreshCw className="w-3.5 h-3.5" /> Reset Demo
-          </button>
           {/* Chaos Sandbox badge - Gated by Login */}
           {userAuth.loggedIn && (
-            <button
-              data-tour="chaos-lab"
+            <button 
               onClick={() => setCurrentPage('chaos-lab')}
-              className={`flex items-center gap-1 px-2.5 py-1.5 text-[10px] sm:text-xs font-bold rounded-full transition duration-200 cursor-pointer ${currentPage === 'chaos-lab'
-                ? 'bg-[#FF7700] text-white shadow-md shadow-[#FF7700]/20'
-                : 'bg-orange-50 text-[#FF7700] hover:bg-orange-100 border border-orange-200/20'
-                }`}
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-[10px] sm:text-xs font-bold rounded-full transition duration-200 cursor-pointer ${
+                currentPage === 'chaos-lab' 
+                  ? 'bg-[#FF7700] text-white shadow-md shadow-[#FF7700]/20'
+                  : 'bg-orange-50 text-[#FF7700] hover:bg-orange-100 border border-orange-200/20'
+              }`}
             >
               {t('navChaos')}
             </button>
@@ -2123,19 +1830,19 @@ function App() {
               <span>{currentLanguage === 'en' ? 'EN' : currentLanguage === 'hi' ? 'हिन्दी' : 'मराठी'}</span>
             </button>
             <div className="absolute right-0 top-full mt-1.5 w-28 bg-white border border-slate-105 rounded-lg shadow-xl py-1 opacity-0 pointer-events-none group-focus-within:opacity-100 group-focus-within:pointer-events-auto group-hover:opacity-100 group-hover:pointer-events-auto transition duration-150 z-50">
-              <button
+              <button 
                 onClick={() => setCurrentLanguage('en')}
                 className="w-full text-left px-3 py-1.5 text-xs font-medium hover:bg-slate-50 hover:text-[#287DFA]"
               >
                 English
               </button>
-              <button
+              <button 
                 onClick={() => setCurrentLanguage('hi')}
                 className="w-full text-left px-3 py-1.5 text-xs font-medium hover:bg-slate-50 hover:text-[#287DFA]"
               >
                 हिन्दी
               </button>
-              <button
+              <button 
                 onClick={() => setCurrentLanguage('mr')}
                 className="w-full text-left px-3 py-1.5 text-xs font-medium hover:bg-slate-50 hover:text-[#287DFA]"
               >
@@ -2157,16 +1864,22 @@ function App() {
                 <div className="px-3 py-2 border-b border-slate-50 text-[10px] text-slate-400 truncate">
                   {userAuth.user?.email}
                 </div>
-                <button
+                <button 
                   onClick={() => setUserAuth({ loggedIn: false, user: null })}
-                  className="w-full text-left px-3 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50 flex items-center gap-1.5"
+                  className="w-full text-left px-3 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50 flex items-center gap-1.5 cursor-pointer"
                 >
                   <LogOut className="w-3.5 h-3.5" /> {t('signOut')}
+                </button>
+                <button
+                  onClick={() => { if (window.__tripresq_restart_guide) window.__tripresq_restart_guide(); }}
+                  className="w-full text-left px-3 py-2 text-xs font-medium text-[#287DFA] hover:bg-blue-50 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" /> Restart Guide
                 </button>
               </div>
             </div>
           ) : (
-            <button
+            <button 
               onClick={() => {
                 setAuthTab('signin');
                 setShowAuthModal(true);
@@ -2182,13 +1895,13 @@ function App() {
       {/* Mobile navigation row (only shown when logged in on small screens) */}
       {userAuth.loggedIn && (
         <nav className="md:hidden bg-white border-b border-slate-100 px-4 py-2 flex items-center justify-around text-xs font-bold text-slate-500">
-          <button
+          <button 
             onClick={() => setCurrentPage('home')}
             className={`hover:text-[#287DFA] transition pb-1 ${currentPage === 'home' ? 'text-[#287DFA] border-b-2 border-[#287DFA]' : ''}`}
           >
             {t('navHome')}
           </button>
-          <button
+          <button 
             onClick={() => setCurrentPage('my-trip')}
             className={`hover:text-[#287DFA] transition pb-1 flex items-center gap-1 ${currentPage === 'my-trip' ? 'text-[#287DFA] border-b-2 border-[#287DFA]' : ''}`}
           >
@@ -2197,13 +1910,13 @@ function App() {
               <span className="w-1.5 h-1.5 rounded-full bg-[#FF7700]" />
             )}
           </button>
-          <button
+          <button 
             onClick={() => setCurrentPage('restaurants')}
             className={`hover:text-[#287DFA] transition pb-1 ${currentPage === 'restaurants' ? 'text-[#287DFA] border-b-2 border-[#287DFA]' : ''}`}
           >
             {t('navRestaurants')}
           </button>
-          <button
+          <button 
             onClick={() => setCurrentPage('support')}
             className={`hover:text-[#287DFA] transition pb-1 ${currentPage === 'support' ? 'text-[#287DFA] border-b-2 border-[#287DFA]' : ''}`}
           >
@@ -2215,7 +1928,7 @@ function App() {
       {/* --- Main Content Stage --- */}
       <div className="flex-1 w-full relative">
         <AnimatePresence mode="wait">
-
+          
           {/* ================= PAGE 1: HOMEPAGE WITH AUTH GATED BUILDER ================= */}
           {currentPage === 'home' && (
             <motion.div
@@ -2263,13 +1976,14 @@ function App() {
                               else if (tab === 'cabs') setBuilderDuration(45);
                               else setBuilderDuration(0);
                             }}
-                            className={`px-3 py-2 rounded-full text-[10px] sm:text-xs font-extrabold tracking-wider uppercase flex items-center gap-1 transition cursor-pointer ${searchTab === tab ? 'bg-[#EAF3FF] text-[#287DFA]' : 'text-slate-500 hover:bg-slate-55'
-                              }`}
+                            className={`px-3 py-2 rounded-full text-[10px] sm:text-xs font-extrabold tracking-wider uppercase flex items-center gap-1 transition cursor-pointer ${
+                              searchTab === tab ? 'bg-[#EAF3FF] text-[#287DFA]' : 'text-slate-500 hover:bg-slate-55'
+                            }`}
                           >
                             {tab === 'flights' ? t('flightTab')
                               : tab === 'trains' ? t('trainTab')
-                                : tab === 'cabs' ? t('cabTab')
-                                  : t('hotelTab')}
+                              : tab === 'cabs' ? t('cabTab')
+                              : t('hotelTab')}
                           </button>
                         ))}
                       </div>
@@ -2277,22 +1991,17 @@ function App() {
                       <form onSubmit={handleAddBuilderNode} className="space-y-6">
                         {/* Dynamic Input Fields based on Active Tab */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-
+                          
                           {/* From location (Not for Hotels) */}
                           {searchTab !== 'hotels' && (
                             <div className="flex flex-col gap-1">
                               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t('fromLabel')}</label>
-                              <div className="relative">
-                                <MapPin className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
-                                <input
-                                  type="text"
-                                  required
-                                  value={builderFrom}
-                                  onChange={(e) => setBuilderFrom(e.target.value)}
-                                  placeholder={t('typePlaceholder')}
-                                  className="w-full h-10 pl-9 pr-3 rounded-lg border border-slate-205 text-xs font-semibold focus:outline-none focus:border-[#287DFA]"
-                                />
-                              </div>
+                              <CityAutocomplete
+                                value={builderFrom}
+                                onChange={setBuilderFrom}
+                                placeholder={t('typePlaceholder')}
+                                required
+                              />
                             </div>
                           )}
 
@@ -2301,17 +2010,12 @@ function App() {
                             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                               {searchTab === 'hotels' ? t('toLabel').split(' ')[0] + " Location" : t('toLabel')}
                             </label>
-                            <div className="relative">
-                              <MapPin className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
-                              <input
-                                type="text"
-                                required
-                                value={builderTo}
-                                onChange={(e) => setBuilderTo(e.target.value)}
-                                placeholder={t('typePlaceholder')}
-                                className="w-full h-10 pl-9 pr-3 rounded-lg border border-slate-205 text-xs font-semibold focus:outline-none focus:border-[#287DFA]"
-                              />
-                            </div>
+                            <CityAutocomplete
+                              value={builderTo}
+                              onChange={setBuilderTo}
+                              placeholder={t('typePlaceholder')}
+                              required
+                            />
                           </div>
 
                           {/* Date */}
@@ -2452,16 +2156,38 @@ function App() {
                             <div className="flex items-center">
                               {builderNodes.map((node, idx) => (
                                 <div key={node.id} className="flex items-center">
-
+                                  
                                   {/* Preview Node Card */}
                                   <div className="w-56 p-3 bg-slate-50 border border-slate-200 rounded-xl relative hover:border-[#287DFA] transition group flex-shrink-0 shadow-xs">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRemoveBuilderNode(node.id)}
-                                      className="absolute -top-1.5 -right-1.5 p-1 bg-red-100 hover:bg-red-200 text-red-600 rounded-full cursor-pointer shadow-xs border border-red-200/50"
-                                    >
-                                      <Trash2 className="w-3 h-3" />
-                                    </button>
+                                    <div className="absolute -top-1.5 -right-1.5 flex items-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          // Populate form fields for editing
+                                          const parts = node.sub?.split('→') || ['', ''];
+                                          setBuilderFrom(parts[0]?.trim() || '');
+                                          setBuilderTo(parts[parts.length-1]?.trim() || '');
+                                          setBuilderTime(node.scheduledStart || '');
+                                          if (node.type === 'flight') { setSearchTab('flights'); setBuilderAirways(node.title); }
+                                          else if (node.type === 'train') { setSearchTab('trains'); setBuilderTrainName(node.title); }
+                                          else if (node.type === 'cab') { setSearchTab('cabs'); setBuilderCabService(node.title); }
+                                          else if (node.type === 'hotel') { setSearchTab('hotels'); setBuilderHotelName(node.title); }
+                                          handleRemoveBuilderNode(node.id);
+                                        }}
+                                        className="p-1 bg-blue-100 hover:bg-blue-200 text-blue-600 rounded-full cursor-pointer shadow-xs border border-blue-200/50"
+                                        aria-label="Edit node"
+                                      >
+                                        <Edit3 className="w-3 h-3" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveBuilderNode(node.id)}
+                                        className="p-1 bg-red-100 hover:bg-red-200 text-red-600 rounded-full cursor-pointer shadow-xs border border-red-200/50"
+                                        aria-label="Remove node"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </div>
 
                                     <div className="flex items-center justify-between mb-2">
                                       <span className="px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wide bg-[#EAF3FF] text-[#287DFA]">
@@ -2473,7 +2199,7 @@ function App() {
                                     </div>
                                     <h5 className="font-extrabold text-xs text-slate-900 truncate font-serif">{node.title}</h5>
                                     <p className="text-[10px] text-slate-450 truncate mt-0.5">{node.sub}</p>
-
+                                    
                                     {node.type !== 'hotel' && (
                                       <span className="text-[9px] text-slate-400 block mt-2 font-mono">
                                         {t('actual').split(' ')[0]} End: {node.scheduledEnd}
@@ -2592,7 +2318,7 @@ function App() {
                   <h2 className="text-2xl font-bold tracking-tight text-center text-slate-900 mb-10 font-serif">
                     {t('howItWorks')}
                   </h2>
-
+                  
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                     <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col items-start gap-4 hover:shadow-md transition">
                       <div className="p-3 rounded-xl bg-[#EAF3FF] text-[#287DFA]">
@@ -2654,12 +2380,21 @@ function App() {
                   >
                     {t('backToBookings')}
                   </button>
-                  <button
-                    data-tour="edit-route"
+                  <button 
                     onClick={() => alert('Itinerary emailed to your account!')}
                     className="flex-1 sm:flex-initial px-4 py-2 bg-slate-950 text-white text-xs font-bold rounded-full hover:bg-slate-900 transition cursor-pointer text-center"
                   >
                     {t('emailItinerary')}
+                  </button>
+                  <button
+                    onClick={() => {
+                      // Load current trip nodes into builder for editing
+                      setBuilderNodes(currentTrip.map(node => ({...node})));
+                      setCurrentPage('home');
+                    }}
+                    className="flex-1 sm:flex-initial px-4 py-2 border border-[#287DFA] text-[#287DFA] text-xs font-bold rounded-full hover:bg-[#EAF3FF] transition cursor-pointer text-center flex items-center justify-center gap-1.5"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" /> Edit Route
                   </button>
                 </div>
               </div>
@@ -2667,7 +2402,6 @@ function App() {
               {/* 🔮 Risk Radar Section */}
               {riskRadar && riskRadar.nodes && riskRadar.nodes.length > 0 && disruptionState === 'healthy' && (
                 <motion.div
-                  data-tour="risk-radar"
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden"
@@ -2680,10 +2414,11 @@ function App() {
                         <p className="text-[10px] text-white/80 font-mono">Real-time weather + buffer risk analysis</p>
                       </div>
                     </div>
-                    <span className={`text-[10px] font-mono font-bold uppercase px-2.5 py-1 rounded-full border ${riskRadar.risk_level === 'HIGH' ? 'bg-red-500/20 border-red-300 text-red-100' :
+                    <span className={`text-[10px] font-mono font-bold uppercase px-2.5 py-1 rounded-full border ${
+                      riskRadar.risk_level === 'HIGH' ? 'bg-red-500/20 border-red-300 text-red-100' :
                       riskRadar.risk_level === 'MEDIUM' ? 'bg-amber-500/20 border-amber-300 text-amber-100' :
-                        'bg-emerald-500/20 border-emerald-300 text-emerald-100'
-                      }`}>
+                      'bg-emerald-500/20 border-emerald-300 text-emerald-100'
+                    }`}>
                       Overall: {riskRadar.risk_level} ({riskRadar.overall_risk}%)
                     </span>
                   </div>
@@ -2699,10 +2434,11 @@ function App() {
                             <span className="text-xs font-bold text-slate-700 truncate pr-2">
                               {nr.type === 'FLIGHT' ? '✈️' : nr.type === 'CAB' ? '🚕' : nr.type === 'HOTEL' ? '🏨' : '🚆'} {nr.title.split('(')[0].trim()}
                             </span>
-                            <span className={`text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded ${nr.risk_level === 'HIGH' ? 'bg-red-100 text-red-700' :
+                            <span className={`text-[9px] font-mono font-bold uppercase px-1.5 py-0.5 rounded ${
+                              nr.risk_level === 'HIGH' ? 'bg-red-100 text-red-700' :
                               nr.risk_level === 'MEDIUM' ? 'bg-amber-100 text-amber-700' :
-                                'bg-emerald-100 text-emerald-700'
-                              }`}>
+                              'bg-emerald-100 text-emerald-700'
+                            }`}>
                               {nr.risk_level}
                             </span>
                           </div>
@@ -2713,10 +2449,11 @@ function App() {
                           {/* Risk bar */}
                           <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-1.5">
                             <div
-                              className={`h-full rounded-full transition-all duration-700 ${nr.risk_level === 'HIGH' ? 'bg-red-500' :
+                              className={`h-full rounded-full transition-all duration-700 ${
+                                nr.risk_level === 'HIGH' ? 'bg-red-500' :
                                 nr.risk_level === 'MEDIUM' ? 'bg-amber-400' :
-                                  'bg-emerald-400'
-                                }`}
+                                'bg-emerald-400'
+                              }`}
                               style={{ width: `${Math.min(nr.combined_risk, 100)}%` }}
                             />
                           </div>
@@ -2829,7 +2566,6 @@ function App() {
                       </div>
                     </div>
                     <button
-                      data-tour="recovery-control"
                       onClick={() => setCurrentPage('rescue')}
                       className="px-4 py-2 bg-[#FF7700] hover:bg-[#E06600] text-white text-xs font-extrabold rounded-lg transition shrink-0 shadow-sm flex items-center gap-1 cursor-pointer w-full md:w-auto justify-center"
                     >
@@ -2938,10 +2674,11 @@ function App() {
                           })).map((item, idx) => (
                             <div
                               key={item.id || idx}
-                              className={`p-3 rounded-xl border transition-all ${item.isRebooked
-                                ? 'border-emerald-200 bg-emerald-50/40'
-                                : 'border-slate-100 bg-slate-50/50'
-                                }`}
+                              className={`p-3 rounded-xl border transition-all ${
+                                item.isRebooked
+                                  ? 'border-emerald-200 bg-emerald-50/40'
+                                  : 'border-slate-100 bg-slate-50/50'
+                              }`}
                             >
                               <div className="grid grid-cols-1 md:grid-cols-11 gap-2 md:gap-3 items-center text-xs">
                                 {/* Original */}
@@ -2969,12 +2706,14 @@ function App() {
                                 {/* Rescheduled */}
                                 <div className="md:col-span-5 flex flex-col gap-0.5">
                                   <div className="flex items-center gap-2">
-                                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold uppercase ${item.isRebooked ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-[#287DFA]'
-                                      }`}>
+                                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold uppercase ${
+                                      item.isRebooked ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-[#287DFA]'
+                                    }`}>
                                       {item.isRebooked ? 'Rescheduled' : 'Preserved'}
                                     </span>
-                                    <span className={`font-mono font-bold ${item.isRebooked ? 'text-emerald-700 font-extrabold' : 'text-slate-700'
-                                      }`}>
+                                    <span className={`font-mono font-bold ${
+                                      item.isRebooked ? 'text-emerald-700 font-extrabold' : 'text-slate-700'
+                                    }`}>
                                       {item.newStart} → {item.newEnd}
                                     </span>
                                   </div>
@@ -3016,35 +2755,37 @@ function App() {
                   <div className="flex items-center min-w-full lg:min-w-0">
                     {currentTrip.map((node, index) => {
                       const isTargetDisrupted = node.status === 'delayed' || node.status === 'broken';
-
+                      
                       return (
                         <div key={node.id} className="flex items-center">
                           {/* Node Card */}
                           <motion.div
                             layout
-                            className={`w-64 p-4 rounded-xl border transition-all duration-300 shadow-sm flex-shrink-0 ${node.status === 'broken'
-                              ? 'border-red-500 bg-red-50/20 shadow-red-105'
-                              : node.status === 'delayed' ? 'border-amber-400 bg-amber-50/30 shadow-amber-100' : 'border-emerald-500 bg-emerald-50/20 shadow-emerald-100 hover:border-emerald-600'
-                              }`}
+                            className={`w-64 p-4 rounded-xl border transition-all duration-300 shadow-sm flex-shrink-0 ${
+                              node.status === 'broken'
+                                ? 'border-red-500 bg-red-50/20 shadow-red-105'
+                                : node.status === 'delayed' ? 'border-amber-400 bg-amber-50/30 shadow-amber-100' : 'border-emerald-500 bg-emerald-50/20 shadow-emerald-100 hover:border-emerald-600'
+                            }`}
                           >
                             <div className="flex items-center justify-between mb-3">
-                              <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide flex items-center gap-1 ${node.status === 'broken'
-                                ? 'bg-red-100 text-red-600'
-                                : node.status === 'delayed' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700 font-extrabold'
-                                }`}>
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide flex items-center gap-1 ${
+                                node.status === 'broken'
+                                  ? 'bg-red-100 text-red-600'
+                                  : node.status === 'delayed' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700 font-extrabold'
+                              }`}>
                                 {node.type === 'flight' ? t('flightTab').split(' ')[1] : node.type === 'train' ? t('trainTab').split(' ')[1] : node.type === 'cab' ? t('cabTab').split(' ')[1] : t('hotelTab').split(' ')[1]}
                               </span>
-
+                              
                               <span className="text-[10px] text-slate-400 font-bold font-mono">
                                 {node.status === 'broken'
                                   ? '❌ ' + t('connectionBroken')
                                   : node.status === 'delayed'
-                                    ? '⚠️ ' + t('delayed')
-                                    : (disruptionState === 'resolved' && node.actualStart !== node.scheduledStart
-                                      ? '✓ RECOVERED'
-                                      : (node.title.includes('LATE CHECK-IN APPROVED')
-                                        ? '✓ LATE CHECK-IN'
-                                        : '✓ SAFE & ON TIME'))}
+                                  ? '⚠️ ' + t('delayed')
+                                  : (disruptionState === 'resolved' && node.actualStart !== node.scheduledStart
+                                    ? '✓ RECOVERED'
+                                    : (node.title.includes('LATE CHECK-IN APPROVED')
+                                      ? '✓ LATE CHECK-IN'
+                                      : '✓ SAFE & ON TIME'))}
                               </span>
                             </div>
 
@@ -3060,159 +2801,78 @@ function App() {
                                 <span className="text-[9px] font-bold text-slate-400 block uppercase tracking-wider">
                                   {disruptionState === 'resolved' && node.actualStart !== node.scheduledStart ? 'RECOVERED' : t('actual')}
                                 </span>
-                                <span className={`text-xs font-extrabold font-mono ${node.status === 'broken' ? 'text-red-500' : node.status === 'delayed' ? 'text-[#FF7700]' : (disruptionState === 'resolved' && node.actualStart !== node.scheduledStart ? 'text-emerald-700' : 'text-emerald-600')
-                                  }`}>
+                                <span className={`text-xs font-extrabold font-mono ${
+                                  node.status === 'broken' ? 'text-red-500' : node.status === 'delayed' ? 'text-[#FF7700]' : (disruptionState === 'resolved' && node.actualStart !== node.scheduledStart ? 'text-emerald-700' : 'text-emerald-600')
+                                }`}>
                                   {node.actualStart} - {node.actualEnd}
                                 </span>
                               </div>
-                            </div >
+                            </div>
 
                             {/* Recovered replacement note */}
-                            {
-                              disruptionState === 'resolved' && node.actualStart !== node.scheduledStart && (
-                                <div className="mt-3 p-1.5 rounded bg-emerald-100/40 text-[9px] font-bold text-emerald-800 flex items-center gap-1">
-                                  <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                                  <span>✓ Replacement: {node.actualStart} - {node.actualEnd}</span>
-                                </div>
-                              )
-                            }
+                            {disruptionState === 'resolved' && node.actualStart !== node.scheduledStart && (
+                              <div className="mt-3 p-1.5 rounded bg-emerald-100/40 text-[9px] font-bold text-emerald-800 flex items-center gap-1">
+                                <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>✓ Replacement: {node.actualStart} - {node.actualEnd}</span>
+                              </div>
+                            )}
 
-                            {
-                              disruptionState === 'resolved' && node.actualStart === node.scheduledStart && node.title.includes('LATE CHECK-IN APPROVED') && (
-                                <div className="mt-3 p-1.5 rounded bg-blue-100/40 text-[9px] font-bold text-[#287DFA] flex items-center gap-1">
-                                  <Check className="w-3.5 h-3.5 text-[#287DFA]" />
-                                  <span>✓ Room Hold Guaranteed (Late Arrival)</span>
-                                </div>
-                              )
-                            }
+                            {disruptionState === 'resolved' && node.actualStart === node.scheduledStart && node.title.includes('LATE CHECK-IN APPROVED') && (
+                              <div className="mt-3 p-1.5 rounded bg-blue-100/40 text-[9px] font-bold text-[#287DFA] flex items-center gap-1">
+                                <Check className="w-3.5 h-3.5 text-[#287DFA]" />
+                                <span>✓ Room Hold Guaranteed (Late Arrival)</span>
+                              </div>
+                            )}
 
                             {/* Node Alert message */}
-                            {
-                              node.status === 'delayed' && (
-                                <div className="mt-3 p-1.5 rounded bg-orange-100/30 text-[9px] font-bold text-[#FF7700] flex items-center gap-1">
-                                  <AlertTriangle className="w-3.5 h-3.5" />
-                                  <span>+{node.delayMinutes} {t('minsLabel')} {t('delayed')} ({t(node.disruptionReason) || t('generalDisruption')})</span>
-                                </div>
-                              )
-                            }
+                            {node.status === 'delayed' && (
+                              <div className="mt-3 p-1.5 rounded bg-orange-100/30 text-[9px] font-bold text-[#FF7700] flex items-center gap-1">
+                                <AlertTriangle className="w-3.5 h-3.5" />
+                                <span>+{node.delayMinutes} {t('minsLabel')} {t('delayed')} ({t(node.disruptionReason) || t('generalDisruption')})</span>
+                              </div>
+                            )}
 
-                            {
-                              node.status === 'broken' && (
-                                <div className="mt-3 p-1.5 rounded bg-red-100/30 text-[9px] font-bold text-red-600 flex items-center gap-1 animate-pulse">
-                                  <AlertCircle className="w-3.5 h-3.5" />
-                                  <span>{t('missedConnection')}</span>
-                                </div>
-                              )
-                            }
-                          </motion.div >
+                            {node.status === 'broken' && (
+                              <div className="mt-3 p-1.5 rounded bg-red-100/30 text-[9px] font-bold text-red-600 flex items-center gap-1 animate-pulse">
+                                <AlertCircle className="w-3.5 h-3.5" />
+                                <span>{t('missedConnection')}</span>
+                              </div>
+                            )}
+                          </motion.div>
 
                           {/* Timeline connector bridge */}
-                          {
-                            index < currentTrip.length - 1 && (
-                              <div className="relative flex items-center justify-center w-20 flex-shrink-0">
-                                <div className="h-[2px] w-full bg-slate-205">
-                                  <motion.div
-                                    className={`h-full ${isTargetDisrupted ? 'bg-red-400' : 'bg-emerald-400'}`}
-                                    initial={{ width: 0 }}
-                                    animate={{ width: '100%' }}
-                                    transition={{ duration: 0.5 }}
-                                  />
-                                </div>
-                                <div className="absolute z-10">
-                                  {isTargetDisrupted ? (
-                                    <span className="px-2 py-0.5 rounded-full bg-red-50 border border-red-200 text-[8px] font-bold text-red-650 whitespace-nowrap shadow-sm font-mono">
-                                      {t('missed')}
-                                    </span>
-                                  ) : (
-                                    <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[8px] font-bold text-emerald-655 whitespace-nowrap shadow-sm font-mono">
-                                      {t('bufferLabel')}: {node.buffer}m
-                                    </span>
-                                  )}
-                                </div>
+                          {index < currentTrip.length - 1 && (
+                            <div className="relative flex items-center justify-center w-20 flex-shrink-0">
+                              <div className="h-[2px] w-full bg-slate-205">
+                                <motion.div 
+                                  className={`h-full ${isTargetDisrupted ? 'bg-red-400' : 'bg-emerald-400'}`}
+                                  initial={{ width: 0 }}
+                                  animate={{ width: '100%' }}
+                                  transition={{ duration: 0.5 }}
+                                />
                               </div>
-                            )
-                          }
-                        </div >
+                              <div className="absolute z-10">
+                                {isTargetDisrupted ? (
+                                  <span className="px-2 py-0.5 rounded-full bg-red-50 border border-red-200 text-[8px] font-bold text-red-650 whitespace-nowrap shadow-sm font-mono">
+                                    {t('missed')}
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[8px] font-bold text-emerald-655 whitespace-nowrap shadow-sm font-mono">
+                                    {t('bufferLabel')}: {node.buffer}m
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       );
                     })}
-                  </div >
-                </div >
-              </div >
-
-              {/* ================= RISK RADAR / CONFIDENCE SCORE (proactive) ================= */}
-              < div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-4" >
-                <div className="flex items-center justify-between flex-wrap gap-3">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-[#EAF3FF] text-[#287DFA]">
-                      <Zap className="w-4 h-4" />
-                    </div>
-                    <h3 className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400">
-                      Risk Radar — Proactive Connection Guard
-                    </h3>
                   </div>
-                  {riskRadar && (
-                    <div className="flex items-center gap-2">
-                      <span className={`px-3 py-1 rounded-full text-xs font-extrabold ${riskRadar.overall_risk_level === 'CRITICAL' ? 'bg-red-100 text-red-700'
-                        : riskRadar.overall_risk_level === 'HIGH' ? 'bg-orange-100 text-[#E06600]'
-                          : riskRadar.overall_risk_level === 'MEDIUM' ? 'bg-amber-100 text-amber-700'
-                            : 'bg-emerald-100 text-emerald-700'
-                        }`}>
-                        Trip Risk: {riskRadar.overall_risk_level} • {riskRadar.overall_risk_score}/100
-                        {riskRadar.connections && riskRadar.connections.length > 0 && (
-                          <span className="font-normal opacity-80 ml-1.5">
-                            · {riskRadar.connections.length} {riskRadar.connections.length === 1 ? 'connection' : 'connections'} monitored
-                          </span>
-                        )}
-                      </span>
-                      <button
-                        onClick={() => fetchRiskRadar(tripRefNum, true)}
-                        disabled={riskRadarLoading}
-                        className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition cursor-pointer disabled:opacity-50"
-                        title="Refresh Risk Radar"
-                      >
-                        <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${riskRadarLoading ? 'animate-spin' : ''}`} />
-                      </button>
-                    </div>
-                  )}
                 </div>
-
-                {
-                  !riskRadar && (
-                    <p className="text-xs text-slate-400">Scanning connections for proactive risk before anything goes wrong…</p>
-                  )
-                }
-
-                {
-                  riskRadar && riskRadar.connections.length === 0 && (
-                    <p className="text-xs text-slate-400">Add at least two connected legs to your itinerary to see proactive risk scoring.</p>
-                  )
-                }
-
-                {
-                  riskRadar && riskRadar.connections.map((conn) => (
-                    <RiskConnectionCard
-                      key={conn.target_node_id}
-                      conn={conn}
-                      plan={bufferPlans[conn.edge_id]}
-                      planLoading={bufferPlanLoadingId === conn.edge_id}
-                      applying={bufferApplyingId === conn.edge_id}
-                      onPrecompute={() => fetchBufferPlan(tripRefNum, conn.edge_id)}
-                      onApply={() => applyBufferPlanForEdge(tripRefNum, conn.edge_id)}
-                    />
-                  ))
-                }
-
-                {
-                  riskRadar && (riskRadar.last_evaluated_at || riskRadar.generated_at) && (
-                    <p className="text-[10px] text-slate-400 font-mono">
-                      Background model last evaluated {new Date(riskRadar.last_evaluated_at || riskRadar.generated_at).toLocaleTimeString()} · re-scans automatically every 45s
-                    </p>
-                  )
-                }
-              </div >
+              </div>
 
               {/* Quick instructions to use Chaos Sandbox */}
-              < div className="p-5 bg-blue-50 border border-blue-105 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4" >
+              <div className="p-5 bg-blue-50 border border-blue-105 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="flex gap-3">
                   <div className="p-2 rounded-xl bg-white text-[#287DFA] shrink-0">
                     <Sparkles className="w-5 h-5" />
@@ -3230,665 +2890,760 @@ function App() {
                 >
                   {t('openSandbox')}
                 </button>
-              </div >
-            </motion.div >
+              </div>
+            </motion.div>
           )}
 
           {/* ================= PAGE 3: THE RESCUE CENTER ================= */}
-          {
-            currentPage === 'rescue' && userAuth.loggedIn && (
-              <motion.div
-                key="rescue-page"
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -15 }}
-                transition={{ duration: 0.25 }}
-                className="max-w-5xl mx-auto w-full px-4 sm:px-6 py-6 flex flex-col gap-6"
-              >
-                <RecoveryControl
-                  tripId={tripRefNum}
-                  currentTrip={currentTrip}
-                  disruptionState={disruptionState}
-                  onPlanApplied={handlePlanApplied}
-                  onBackToTimeline={() => setCurrentPage('my-trip')}
-                />
-              </motion.div >
-            )
-          }
+          {currentPage === 'rescue' && userAuth.loggedIn && (
+            <motion.div
+              key="rescue-page"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.25 }}
+              className="max-w-5xl mx-auto w-full px-4 sm:px-6 py-6 flex flex-col gap-6"
+            >
+              <RecoveryControl
+                tripId={tripRefNum}
+                currentTrip={currentTrip}
+                disruptionState={disruptionState}
+                onPlanApplied={handlePlanApplied}
+                onBackToTimeline={() => setCurrentPage('my-trip')}
+              />
+            </motion.div>
+          )}
 
           {/* ================= PAGE 4: CHAOS LAB SANDBOX ================= */}
-          {
-            currentPage === 'chaos-lab' && userAuth.loggedIn && (
-              <motion.div
-                key="chaos-lab"
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -15 }}
-                transition={{ duration: 0.25 }}
-                className="max-w-5xl mx-auto w-full px-4 sm:px-6 py-10 flex flex-col gap-6"
-              >
-                <div className="border-b border-slate-205 pb-5 text-left">
-                  <span className="px-3 py-1 rounded-full bg-orange-100 text-[#FF7700] text-xs font-bold font-mono uppercase tracking-wider">
-                    ⚡ Sandbox Mode
-                  </span>
-                  <h1 className="text-2xl font-extrabold text-slate-900 mt-2 font-serif">{t('chaosTitle')}</h1>
-                  <p className="text-slate-505 text-xs mt-1 leading-relaxed">{t('chaosDesc')}</p>
-                </div>
+          {currentPage === 'chaos-lab' && userAuth.loggedIn && (
+            <motion.div
+              key="chaos-lab"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.25 }}
+              className="max-w-5xl mx-auto w-full px-4 sm:px-6 py-10 flex flex-col gap-6"
+            >
+              <div className="border-b border-slate-205 pb-5 text-left">
+                <span className="px-3 py-1 rounded-full bg-orange-100 text-[#FF7700] text-xs font-bold font-mono uppercase tracking-wider">
+                  ⚡ Sandbox Mode
+                </span>
+                <h1 className="text-2xl font-extrabold text-slate-900 mt-2 font-serif">{t('chaosTitle')}</h1>
+                <p className="text-slate-505 text-xs mt-1 leading-relaxed">{t('chaosDesc')}</p>
+              </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                  {/* Controls Card */}
-                  <div className="md:col-span-2 bg-white p-4 sm:p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6 text-left">
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 font-mono">{t('disruptionParams')}</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                {/* Controls Card */}
+                <div className="md:col-span-2 bg-white p-4 sm:p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6 text-left">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 font-mono">{t('disruptionParams')}</h3>
 
-                    {/* 1. Node selector */}
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold text-slate-655 block">{t('selectNode')}</label>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        {currentTrip.map(node => (
-                          <button
-                            key={node.id}
-                            type="button"
-                            onClick={() => setSelectedDisruptNode(node.id)}
-                            className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col gap-1.5 ${selectedDisruptNode === node.id
+                  {/* 1. Node selector */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-655 block">{t('selectNode')}</label>
+                    {currentTrip.length === 0 ? (
+                      <div className="p-6 rounded-xl border border-slate-200 bg-slate-50 text-center">
+                        <Clock className="w-5 h-5 text-[#287DFA] animate-spin mx-auto mb-2" />
+                        <p className="text-xs text-slate-500 font-semibold">Loading trip nodes from backend...</p>
+                        <p className="text-[10px] text-slate-400 mt-1">Ensure Flask backend is running at http://localhost:5000</p>
+                      </div>
+                    ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {currentTrip.map(node => (
+                        <button
+                          key={node.id}
+                          type="button"
+                          onClick={() => setSelectedDisruptNode(node.id)}
+                          className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col gap-1.5 ${
+                            selectedDisruptNode === node.id
                               ? 'border-[#287DFA] bg-[#EAF3FF]/60 ring-2 ring-[#287DFA]/30'
                               : node.status === 'broken'
-                                ? 'border-red-300 bg-red-50/30 hover:bg-red-50/50'
-                                : node.status === 'delayed'
-                                  ? 'border-amber-300 bg-amber-50/30 hover:bg-amber-50/50'
-                                  : 'border-emerald-300 bg-emerald-50/30 hover:bg-emerald-50/50'
-                              }`}
-                          >
-                            <div className="flex justify-between items-center w-full">
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                                {node.type}
-                              </span>
-                              <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase font-mono ${node.status === 'broken'
+                              ? 'border-red-300 bg-red-50/30 hover:bg-red-50/50'
+                              : node.status === 'delayed'
+                              ? 'border-amber-300 bg-amber-50/30 hover:bg-amber-50/50'
+                              : 'border-emerald-300 bg-emerald-50/30 hover:bg-emerald-50/50'
+                          }`}
+                        >
+                          <div className="flex justify-between items-center w-full">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                              {node.type}
+                            </span>
+                            <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase font-mono ${
+                              node.status === 'broken'
                                 ? 'bg-red-100 text-red-700'
                                 : node.status === 'delayed'
-                                  ? 'bg-amber-100 text-amber-700'
-                                  : 'bg-emerald-100 text-emerald-700'
-                                }`}>
-                                {node.status === 'broken' ? 'BROKEN' : node.status === 'delayed' ? 'AT RISK' : 'SAFE'}
-                              </span>
-                            </div>
-                            <span className="font-bold text-xs truncate text-slate-900">{node.title}</span>
-                            <span className="text-[10px] font-semibold text-slate-500 font-mono">{node.scheduledStart} - {node.scheduledEnd}</span>
-                          </button>
+                                ? 'bg-amber-100 text-amber-700'
+                                : 'bg-emerald-100 text-emerald-700'
+                            }`}>
+                              {node.status === 'broken' ? 'BROKEN' : node.status === 'delayed' ? 'AT RISK' : 'SAFE'}
+                            </span>
+                          </div>
+                          <span className="font-bold text-xs truncate text-slate-900">{node.title}</span>
+                          <span className="text-[10px] font-semibold text-slate-500 font-mono">{node.scheduledStart} - {node.scheduledEnd}</span>
+                        </button>
+                      ))}
+                    </div>
+                    )}
+                  </div>
+
+                  {/* 2. Disruption Type */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-655 block">{t('disruptType')}</label>
+                    <div className="grid grid-cols-3 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setDisruptType('delay')}
+                        className={`py-2 px-3 rounded-lg border text-center text-xs font-bold transition cursor-pointer ${
+                          disruptType === 'delay'
+                            ? 'border-[#FF7700] bg-orange-50 text-[#FF7700]'
+                            : 'border-slate-205 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        {t('delayOption')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDisruptType('cancel')}
+                        className={`py-2 px-3 rounded-lg border text-center text-xs font-bold transition cursor-pointer ${
+                          disruptType === 'cancel'
+                            ? 'border-red-500 bg-red-50 text-red-655'
+                            : 'border-slate-205 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        {t('cancelOption')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDisruptType('lockout')}
+                        className={`py-2 px-3 rounded-lg border text-center text-xs font-bold transition cursor-pointer ${
+                          disruptType === 'lockout'
+                            ? 'border-red-500 bg-red-50 text-red-655'
+                            : 'border-slate-205 text-slate-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        {t('lockoutOption')}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 3. Delay duration slider */}
+                  {disruptType === 'delay' && (
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-baseline">
+                        <label className="text-xs font-bold text-slate-655">{t('delayAmount')}</label>
+                        <span className="text-sm font-mono font-extrabold text-[#FF7700]">{disruptDelay} {t('minsLabel')} ({(disruptDelay/60).toFixed(1)} hrs)</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="15"
+                        max="360"
+                        step="15"
+                        value={disruptDelay}
+                        onChange={(e) => setDisruptDelay(Number(e.target.value))}
+                        className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-[#FF7700]"
+                      />
+                      {/* Slider Scale */}
+                      <div className="flex justify-between px-0.5 -mt-0.5">
+                        {[0, 60, 120, 180, 240, 300, 360].map(val => (
+                          <div key={val} className="flex flex-col items-center">
+                            <div className={`w-px h-1.5 ${disruptDelay >= val ? 'bg-[#FF7700]' : 'bg-slate-300'}`} />
+                            <span className={`text-[8px] font-mono font-bold mt-0.5 ${disruptDelay >= val ? 'text-[#FF7700]' : 'text-slate-400'}`}>{val}</span>
+                          </div>
                         ))}
                       </div>
                     </div>
+                  )}
 
-                    {/* 2. Disruption Type */}
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold text-slate-655 block">{t('disruptType')}</label>
-                      <div className="grid grid-cols-3 gap-3">
-                        <button
-                          type="button"
-                          onClick={() => setDisruptType('delay')}
-                          className={`py-2 px-3 rounded-lg border text-center text-xs font-bold transition cursor-pointer ${disruptType === 'delay'
-                            ? 'border-[#FF7700] bg-orange-50 text-[#FF7700]'
-                            : 'border-slate-205 text-slate-600 hover:bg-slate-50'
-                            }`}
-                        >
-                          {t('delayOption')}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDisruptType('cancel')}
-                          className={`py-2 px-3 rounded-lg border text-center text-xs font-bold transition cursor-pointer ${disruptType === 'cancel'
-                            ? 'border-red-500 bg-red-50 text-red-655'
-                            : 'border-slate-205 text-slate-600 hover:bg-slate-50'
-                            }`}
-                        >
-                          {t('cancelOption')}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDisruptType('lockout')}
-                          className={`py-2 px-3 rounded-lg border text-center text-xs font-bold transition cursor-pointer ${disruptType === 'lockout'
-                            ? 'border-red-500 bg-red-50 text-red-655'
-                            : 'border-slate-205 text-slate-600 hover:bg-slate-50'
-                            }`}
-                        >
-                          {t('lockoutOption')}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* 3. Delay duration slider */}
-                    {disruptType === 'delay' && (
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-baseline">
-                          <label className="text-xs font-bold text-slate-655">{t('delayAmount')}</label>
-                          <span className="text-sm font-mono font-extrabold text-[#FF7700]">{disruptDelay} {t('minsLabel')} ({(disruptDelay / 60).toFixed(1)} hrs)</span>
-                        </div>
-                        <input
-                          type="range"
-                          min="15"
-                          max="360"
-                          step="15"
-                          value={disruptDelay}
-                          onChange={(e) => setDisruptDelay(Number(e.target.value))}
-                          className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-[#FF7700]"
-                        />
-                      </div>
-                    )}
-
-                    {/* 4. Reason */}
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold text-slate-655 block">{t('disruptReason')}</label>
+                  {/* 4. Reason */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-655 block">{t('disruptReason')}</label>
+                    <div className="relative">
                       <select
                         value={disruptReason}
                         onChange={(e) => setDisruptReason(e.target.value)}
-                        className="w-full h-10 px-3 rounded-lg border border-slate-200 text-xs font-bold bg-slate-50 focus:outline-none focus:border-[#FF7700] transition cursor-pointer appearance-none"
+                        className="w-full h-10 px-3 pr-9 rounded-lg border border-slate-200 text-xs font-bold bg-slate-50 focus:outline-none focus:border-[#FF7700] focus:ring-2 focus:ring-[#FF7700]/10 transition cursor-pointer appearance-none"
                       >
                         <option value="Severe Weather & Thunderstorms">{t('weatherReason')}</option>
                         <option value="Mechanical Failure & Engine Stall">{t('mechReason')}</option>
                         <option value="Rail/Air Traffic Congestion">{t('trafficReason')}</option>
                         <option value="Security Lockdown Alert">{t('securityReason')}</option>
                       </select>
+                      <ChevronDown className="absolute right-3 top-3 w-4 h-4 text-slate-400 pointer-events-none" />
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-slate-105">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerDisruptionCascade(selectedDisruptNode, disruptType, disruptDelay, disruptReason);
+                      }}
+                      className="flex-1 px-6 h-11 bg-[#FF7700] hover:bg-[#E06600] text-white font-extrabold rounded-xl transition shadow-md shadow-[#FF7700]/10 active:scale-98 flex items-center justify-center gap-2 cursor-pointer text-xs"
+                    >
+                      <Flame className="w-4 h-4" /> {t('triggerBtn')}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage('rescue')}
+                      className="px-4 h-11 border border-blue-200 bg-blue-50 hover:bg-blue-100 text-[#287DFA] font-bold rounded-xl transition cursor-pointer text-xs flex items-center justify-center gap-1.5"
+                    >
+                      <span>🎛️ Recovery Control →</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage('my-trip')}
+                      className="px-4 h-11 border border-orange-200 bg-orange-50 hover:bg-orange-100 text-orange-800 font-bold rounded-xl transition cursor-pointer text-xs flex items-center justify-center gap-1.5"
+                    >
+                      <span>{t('navMyTrips')} →</span>
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={handleResetJourney}
+                      className="px-6 h-11 border border-slate-350 bg-white hover:bg-slate-50 text-slate-700 font-bold rounded-xl transition cursor-pointer text-xs"
+                    >
+                      {t('resetBtn')}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Metrics & Impact Panel */}
+                <div className="bg-slate-900 text-white p-6 rounded-2xl flex flex-col justify-between relative overflow-hidden shadow-xl border border-slate-800 text-left">
+                  <div className="absolute right-0 top-0 translate-x-10 -translate-y-10 w-36 h-36 rounded-full bg-[#FF7700]/10 blur-xl pointer-events-none" />
+                  
+                  <div className="space-y-6 z-10">
+                    <div className="flex items-center gap-2 text-orange-400">
+                      <Sparkles className="w-5 h-5" />
+                      <h4 className="text-xs font-bold uppercase tracking-wider font-mono">{t('impactTitle')}</h4>
                     </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-slate-105">
-                      {/* Disruption Error State */}
-                      {disruptionError && (
-                        <div className="w-full mb-3 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 flex items-center gap-2">
-                          <AlertCircle className="w-4 h-4 shrink-0" />
-                          <p className="text-xs font-medium">{disruptionError}</p>
-                        </div>
-                      )}
-
-                      <button
-                        type="button"
-                        disabled={isDisrupting || !selectedDisruptNode}
-                        onClick={() => {
-                          triggerDisruptionCascade(selectedDisruptNode, disruptType, disruptDelay, disruptReason);
-                        }}
-                        className="flex-1 px-6 h-11 bg-[#FF7700] hover:bg-[#E06600] text-white font-extrabold rounded-xl transition shadow-md shadow-[#FF7700]/10 active:scale-98 flex items-center justify-center gap-2 cursor-pointer text-xs disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {isDisrupting ? (
-                          <><RefreshCw className="w-4 h-4 animate-spin" /> Simulating...</>
-                        ) : (
-                          <><Flame className="w-4 h-4" /> {t('triggerBtn')}</>
-                        )}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setCurrentPage('rescue')}
-                        className="px-4 h-11 border border-blue-200 bg-blue-50 hover:bg-blue-100 text-[#287DFA] font-bold rounded-xl transition cursor-pointer text-xs flex items-center justify-center gap-1.5"
-                      >
-                        <span>🎛️ Recovery Control →</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setCurrentPage('my-trip')}
-                        className="px-4 h-11 border border-orange-200 bg-orange-50 hover:bg-orange-100 text-orange-800 font-bold rounded-xl transition cursor-pointer text-xs flex items-center justify-center gap-1.5"
-                      >
-                        <span>{t('navMyTrips')} →</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleResetJourney}
-                        className="px-6 h-11 border border-slate-350 bg-white hover:bg-slate-50 text-slate-700 font-bold rounded-xl transition cursor-pointer text-xs"
-                      >
-                        {t('resetBtn')}
-                      </button>
-                    </div >
-                  </div >
-
-                  {/* Metrics & Impact Panel */}
-                  < div className="bg-slate-900 text-white p-6 rounded-2xl flex flex-col justify-between relative overflow-hidden shadow-xl border border-slate-800 text-left" >
-                    <div className="absolute right-0 top-0 translate-x-10 -translate-y-10 w-36 h-36 rounded-full bg-[#FF7700]/10 blur-xl pointer-events-none" />
-
-                    <div className="space-y-6 z-10">
-                      <div className="flex items-center gap-2 text-orange-400">
-                        <Sparkles className="w-5 h-5" />
-                        <h4 className="text-xs font-bold uppercase tracking-wider font-mono">{t('impactTitle')}</h4>
+                    <div className="space-y-4">
+                      {/* Metric 1 */}
+                      <div className="border-b border-slate-800 pb-3 flex justify-between items-center">
+                        <span className="text-slate-400 text-xs font-semibold">{t('downstreamDelay')}</span>
+                        <span className="text-lg font-mono font-extrabold text-[#FF7700]">
+                          {impactMetrics.delayMinutes > 0 ? `${impactMetrics.delayMinutes} ${t('minsLabel')}` : `0 ${t('minsLabel')}`}
+                        </span>
                       </div>
 
-                      <div className="space-y-4">
-                        {/* Metric 1 */}
-                        <div className="border-b border-slate-800 pb-3 flex justify-between items-center">
-                          <span className="text-slate-400 text-xs font-semibold">{t('downstreamDelay')}</span>
-                          <span className="text-lg font-mono font-extrabold text-[#FF7700]">
-                            {impactMetrics.delayMinutes > 0 ? `${impactMetrics.delayMinutes} ${t('minsLabel')}` : `0 ${t('minsLabel')}`}
-                          </span>
-                        </div>
+                      {/* Metric 2 */}
+                      <div className="border-b border-slate-800 pb-3 flex justify-between items-center">
+                        <span className="text-slate-400 text-xs font-semibold">{t('brokenConnections')}</span>
+                        <span className="text-lg font-mono font-extrabold text-rose-500">
+                          {impactMetrics.brokenConnections}
+                        </span>
+                      </div>
 
-                        {/* Metric 2 */}
-                        <div className="border-b border-slate-800 pb-3 flex justify-between items-center">
-                          <span className="text-slate-400 text-xs font-semibold">{t('brokenConnections')}</span>
-                          <span className="text-lg font-mono font-extrabold text-rose-500">
-                            {impactMetrics.brokenConnections}
-                          </span>
-                        </div>
-
-                        {/* Metric 3 */}
-                        <div className="pb-1 flex justify-between items-center">
-                          <span className="text-slate-400 text-xs font-semibold">{t('affectedNodes')}</span>
-                          <span className="text-lg font-mono font-extrabold text-orange-400">
-                            {impactMetrics.affectedNodes}
-                          </span>
-                        </div>
+                      {/* Metric 3 */}
+                      <div className="pb-1 flex justify-between items-center">
+                        <span className="text-slate-400 text-xs font-semibold">{t('affectedNodes')}</span>
+                        <span className="text-lg font-mono font-extrabold text-orange-400">
+                          {impactMetrics.affectedNodes}
+                        </span>
                       </div>
                     </div>
+                  </div>
 
-                    <div className="pt-8 z-10">
-                      <div className="bg-slate-800/60 p-4 rounded-xl border border-slate-700/50 text-[11px] leading-relaxed text-slate-400 space-y-2">
-                        <span className="font-extrabold text-white block uppercase tracking-wider font-mono text-[10px]">{t('realTimeGraphImpact')}</span>
-                        {t('graphImpactDesc')}
-                      </div>
+                  <div className="pt-8 z-10">
+                    <div className="bg-slate-800/60 p-4 rounded-xl border border-slate-700/50 text-[11px] leading-relaxed text-slate-400 space-y-2">
+                      <span className="font-extrabold text-white block uppercase tracking-wider font-mono text-[10px]">{t('realTimeGraphImpact')}</span>
+                      {t('graphImpactDesc')}
                     </div>
-                  </div >
-                </div >
-              </motion.div >
-            )
-          }
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
 
           {/* ================= PAGE 5: LOCAL DINING & RESTAURANTS ================= */}
-          {
-            currentPage === 'restaurants' && userAuth.loggedIn && (
-              <motion.div
-                key="restaurants-page"
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -15 }}
-                transition={{ duration: 0.25 }}
-                className="max-w-5xl mx-auto w-full px-4 sm:px-6 py-10 flex flex-col gap-6"
-              >
-                <DiningHub
-                  tripId={tripRefNum}
-                  tripRef={tripRefNum}
-                  currentTripNodes={currentTrip}
-                  activeDestination={activeDestination}
-                />
-              </motion.div>
-            )
-          }
+          {currentPage === 'restaurants' && userAuth.loggedIn && (
+            <motion.div
+              key="restaurants-page"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.25 }}
+              className="max-w-5xl mx-auto w-full px-4 sm:px-6 py-10 flex flex-col gap-6"
+            >
+              <div className="border-b border-slate-205 pb-5 text-left">
+                <span className="px-3 py-1 rounded-full bg-[#EAF3FF] text-[#287DFA] text-xs font-bold font-mono uppercase tracking-wider">
+                  🍽️ Transit Dining
+                </span>
+                <h1 className="text-2xl font-extrabold text-slate-900 mt-2 font-serif">{t('diningTitle')}</h1>
+                <p className="text-slate-500 text-xs mt-1">{t('diningDesc')} Near <span className="font-extrabold text-[#287DFA]">{activeDestination}</span> Hub.</p>
+              </div>
+
+              {/* Filters list */}
+              <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 pb-4">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">{t('all')}:</span>
+                {['All', 'Pure Veg', 'Local Specialties', 'Fast Delivery', 'Open 24/7'].map(filterOption => (
+                  <button
+                    key={filterOption}
+                    type="button"
+                    onClick={() => setRestaurantFilter(filterOption)}
+                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition cursor-pointer ${
+                      restaurantFilter === filterOption
+                        ? 'bg-[#287DFA] text-white shadow-sm'
+                        : 'bg-white border border-slate-200 text-slate-655 hover:bg-slate-50'
+                    }`}
+                  >
+                    {filterOption === 'Pure Veg' ? t('vegOnly')
+                     : filterOption === 'Local Specialties' ? t('specialties')
+                     : filterOption === 'Fast Delivery' ? t('fastDelivery')
+                     : filterOption === 'Open 24/7' ? t('open247')
+                     : filterOption === 'All' ? t('all')
+                     : filterOption}
+                  </button>
+                ))}
+              </div>
+
+              {/* Restaurant Cards Grid */}
+              {filteredRestaurants.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+                  {filteredRestaurants.map(restaurant => (
+                    <motion.div
+                      layout
+                      key={restaurant.id}
+                      className="bg-white rounded-xl overflow-hidden border border-slate-100 shadow-sm flex flex-col hover:shadow-md transition text-left"
+                    >
+                      <div className="h-44 relative bg-slate-100 overflow-hidden">
+                        <img
+                          src={restaurant.image}
+                          alt={restaurant.name}
+                          className="w-full h-full object-cover hover:scale-105 transition duration-500"
+                        />
+                        {restaurant.open247 && (
+                          <span className="absolute top-3 right-3 bg-red-500 text-white text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider shadow-sm flex items-center gap-1 font-mono">
+                            <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" /> {t('open247')}
+                          </span>
+                        )}
+                        <span className="absolute bottom-3 left-3 bg-slate-900/85 backdrop-blur-xs text-white text-[9px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider font-mono">
+                          📍 {restaurant.distance} {t('kmAway')}
+                        </span>
+                      </div>
+
+                      <div className="p-4 flex-1 flex flex-col justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <h3 className="font-extrabold text-sm text-slate-955 font-serif line-clamp-1">{restaurant.name}</h3>
+                            <div className="flex items-center gap-1 shrink-0 text-amber-500 font-bold text-xs">
+                              <Star className="w-3.5 h-3.5 fill-current" />
+                              <span>{restaurant.rating}</span>
+                            </div>
+                          </div>
+                          <p className="text-[11px] font-semibold text-slate-500 line-clamp-1">{restaurant.cuisine}</p>
+                        </div>
+
+                        <div className="flex justify-between items-center border-t border-slate-50 pt-3">
+                          <span className="text-[10px] text-slate-400 font-semibold">{t('avgCost')}: <span className="font-extrabold text-slate-800 font-mono">₹{restaurant.cost}</span></span>
+                          <button
+                            onClick={() => alert(`${t('tableBookedSuccess')} ${restaurant.name}!`)}
+                            className="px-3 py-1.5 bg-[#EAF3FF] hover:bg-[#287DFA] hover:text-white text-[#287DFA] text-[10px] font-bold rounded-lg transition cursor-pointer"
+                          >
+                            {t('bookTable')}
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-16 bg-white rounded-2xl border border-slate-100 flex flex-col items-center gap-2">
+                  <Filter className="w-8 h-8 text-slate-350" />
+                  <h4 className="font-bold text-slate-800 text-sm">{t('noDiningTitle')}</h4>
+                  <p className="text-xs text-slate-450">{t('noDiningDesc')}</p>
+                </div>
+              )}
+            </motion.div>
+          )}
 
           {/* ================= PAGE 6: SUPPORT HUB & CHATBOT CENTER ================= */}
-          {
-            currentPage === 'support' && userAuth.loggedIn && (
-              <motion.div
-                key="support-page"
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -15 }}
-                transition={{ duration: 0.25 }}
-                className="max-w-5xl mx-auto w-full px-4 sm:px-6 py-10 flex flex-col gap-6"
-              >
-                <div className="border-b border-slate-200 pb-5 text-left">
-                  <span className="px-3 py-1 rounded-full bg-slate-900 text-white text-xs font-bold font-mono uppercase tracking-wider">
-                    📞 Help Center
-                  </span>
-                  <h1 className="text-2xl font-extrabold text-slate-900 mt-2 font-serif">{t('supportTitle')}</h1>
-                  <p className="text-slate-550 text-xs mt-1">{t('supportDesc')}</p>
-                </div>
+          {currentPage === 'support' && userAuth.loggedIn && (
+            <motion.div
+              key="support-page"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+              transition={{ duration: 0.25 }}
+              className="max-w-5xl mx-auto w-full px-4 sm:px-6 py-10 flex flex-col gap-6"
+            >
+              <div className="border-b border-slate-200 pb-5 text-left">
+                <span className="px-3 py-1 rounded-full bg-slate-900 text-white text-xs font-bold font-mono uppercase tracking-wider">
+                  📞 Help Center
+                </span>
+                <h1 className="text-2xl font-extrabold text-slate-900 mt-2 font-serif">{t('supportTitle')}</h1>
+                <p className="text-slate-550 text-xs mt-1">{t('supportDesc')}</p>
+              </div>
 
-                {/* Support tabs */}
-                <div className="flex gap-2 border-b border-slate-200 pb-2">
-                  <button
-                    onClick={() => setSupportTab('faq')}
-                    className={`px-4 py-2 text-xs font-bold transition cursor-pointer ${supportTab === 'faq' ? 'text-[#287DFA] border-b-2 border-[#287DFA]' : 'text-slate-505'
-                      }`}
-                  >
-                    {t('faqTab')}
-                  </button>
-                  <button
-                    onClick={() => setSupportTab('bug')}
-                    className={`px-4 py-2 text-xs font-bold transition cursor-pointer ${supportTab === 'bug' ? 'text-[#287DFA] border-b-2 border-[#287DFA]' : 'text-slate-505'
-                      }`}
-                  >
-                    {t('bugTab')}
-                  </button>
-                  <button
-                    onClick={() => setSupportTab('feedback')}
-                    className={`px-4 py-2 text-xs font-bold transition cursor-pointer ${supportTab === 'feedback' ? 'text-[#287DFA] border-b-2 border-[#287DFA]' : 'text-slate-505'
-                      }`}
-                  >
-                    {t('feedbackTab')}
-                  </button>
-                </div>
+              {/* Support tabs */}
+              <div className="flex gap-2 border-b border-slate-200 pb-2">
+                <button
+                  onClick={() => setSupportTab('faq')}
+                  className={`px-4 py-2 text-xs font-bold transition cursor-pointer ${
+                    supportTab === 'faq' ? 'text-[#287DFA] border-b-2 border-[#287DFA]' : 'text-slate-505'
+                  }`}
+                >
+                  {t('faqTab')}
+                </button>
+                <button
+                  onClick={() => setSupportTab('bug')}
+                  className={`px-4 py-2 text-xs font-bold transition cursor-pointer ${
+                    supportTab === 'bug' ? 'text-[#287DFA] border-b-2 border-[#287DFA]' : 'text-slate-505'
+                  }`}
+                >
+                  {t('bugTab')}
+                </button>
+                <button
+                  onClick={() => setSupportTab('feedback')}
+                  className={`px-4 py-2 text-xs font-bold transition cursor-pointer ${
+                    supportTab === 'feedback' ? 'text-[#287DFA] border-b-2 border-[#287DFA]' : 'text-slate-505'
+                  }`}
+                >
+                  {t('feedbackTab')}
+                </button>
+              </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-
-                  {/* Left Side: Content Tab Panels */}
-                  <div className="lg:col-span-2">
-
-                    {/* Tab 1: FAQs & Helpline */}
-                    {supportTab === 'faq' && (
-                      <div className="space-y-6 text-left">
-                        {/* Helpline Box */}
-                        <div className="p-5 bg-rose-50 border border-rose-100 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
-                          <div className="flex gap-3">
-                            <div className="p-3 bg-rose-500 text-white rounded-xl self-start shrink-0">
-                              <ShieldAlert className="w-5 h-5 animate-pulse" />
-                            </div>
-                            <div>
-                              <h4 className="text-sm font-bold text-slate-900 font-serif">{t('sosHelpline')}</h4>
-                              <p className="text-xs text-slate-600 mt-1 leading-normal font-semibold">
-                                {t('sosDesc')}: <span className="font-extrabold text-rose-600 font-mono">1800-419-7377</span> (Toll-Free). Immediate vector backup deck active.
-                              </p>
-                            </div>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+                
+                {/* Left Side: Content Tab Panels */}
+                <div className="lg:col-span-2">
+                  
+                  {/* Tab 1: FAQs & Helpline */}
+                  {supportTab === 'faq' && (
+                    <div className="space-y-6 text-left">
+                      {/* Helpline Box */}
+                      <div className="p-5 bg-rose-50 border border-rose-100 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div className="flex gap-3">
+                          <div className="p-3 bg-rose-500 text-white rounded-xl self-start shrink-0">
+                            <ShieldAlert className="w-5 h-5 animate-pulse" />
                           </div>
-                          <a
-                            href="tel:18004197377"
-                            className="px-4 py-2 bg-rose-500 text-white text-xs font-bold rounded-lg hover:bg-rose-600 transition shadow-sm whitespace-nowrap text-center animate-pulse w-full sm:w-auto"
-                          >
-                            {t('callSos')}
-                          </a>
-                        </div>
-
-                        {/* FAQs Grid */}
-                        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-4">
-                          <h3 className="text-base font-extrabold text-slate-900 border-b border-slate-50 pb-2 font-serif">{t('faqTitle')}</h3>
-
-                          <div className="space-y-4">
-                            <div className="space-y-1">
-                              <h4 className="text-xs font-extrabold text-slate-900 font-serif">Q: How does the automatic rebooking guard work?</h4>
-                              <p className="text-[11px] text-slate-505 leading-relaxed font-semibold">
-                                TripResQ monitors flight and train schedules in real-time. If your transit is delayed and we compute a broken connection with your downstream travel (e.g. cab pickup or hotel stay), our engine automatically triggers pre-validated recovery routes and registers them for you at no cost.
-                              </p>
-                            </div>
-                            <div className="space-y-1">
-                              <h4 className="text-xs font-extrabold text-slate-900 font-serif">Q: Are the rescue flights/trains completely free?</h4>
-                              <p className="text-[11px] text-slate-505 leading-relaxed font-semibold">
-                                Yes! All recovery travel is covered 100% under your TripResQ Protection plan. You don't pay a single rupee extra when choosing a replacement plan.
-                              </p>
-                            </div>
-                            <div className="space-y-1">
-                              <h4 className="text-xs font-extrabold text-slate-900 font-serif">Q: How is hotel late check-in handled?</h4>
-                              <p className="text-[11px] text-slate-555 leading-relaxed font-semibold">
-                                If your arrival is delayed, our system automatically informs the hotel reception desk via API, sending check-in updates and preventing reservation cancellations for late arrival.
-                              </p>
-                            </div>
+                          <div>
+                            <h4 className="text-sm font-bold text-slate-900 font-serif">{t('sosHelpline')}</h4>
+                            <p className="text-xs text-slate-600 mt-1 leading-normal font-semibold">
+                              {t('sosDesc')}: <span className="font-extrabold text-rose-600 font-mono">1800-419-7377</span> (Toll-Free). Immediate vector backup deck active.
+                            </p>
                           </div>
                         </div>
+                        <a
+                          href="tel:18004197377"
+                          className="px-4 py-2 bg-rose-500 text-white text-xs font-bold rounded-lg hover:bg-rose-600 transition shadow-sm whitespace-nowrap text-center animate-pulse w-full sm:w-auto"
+                        >
+                          {t('callSos')}
+                        </a>
                       </div>
-                    )}
 
-                    {/* Tab 2: Bug Report Form */}
-                    {supportTab === 'bug' && (
-                      <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6 text-left">
-                        <div>
-                          <h3 className="text-base font-extrabold text-slate-900 font-serif">{t('bugTitle')}</h3>
-                          <p className="text-slate-450 text-[11px] mt-0.5 font-semibold">Spotted something broken? File a report so our engineers can fix it.</p>
+                      {/* FAQs Grid */}
+                      <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-4">
+                        <h3 className="text-base font-extrabold text-slate-900 border-b border-slate-50 pb-2 font-serif">{t('faqTitle')}</h3>
+                        
+                        <div className="space-y-4">
+                          <div className="space-y-1">
+                            <h4 className="text-xs font-extrabold text-slate-900 font-serif">Q: How does the automatic rebooking guard work?</h4>
+                            <p className="text-[11px] text-slate-505 leading-relaxed font-semibold">
+                              TripResQ monitors flight and train schedules in real-time. If your transit is delayed and we compute a broken connection with your downstream travel (e.g. cab pickup or hotel stay), our engine automatically triggers pre-validated recovery routes and registers them for you at no cost.
+                            </p>
+                          </div>
+                          <div className="space-y-1">
+                            <h4 className="text-xs font-extrabold text-slate-900 font-serif">Q: Are the rescue flights/trains completely free?</h4>
+                            <p className="text-[11px] text-slate-505 leading-relaxed font-semibold">
+                              Yes! All recovery travel is covered 100% under your TripResQ Protection plan. You don't pay a single rupee extra when choosing a replacement plan.
+                            </p>
+                          </div>
+                          <div className="space-y-1">
+                            <h4 className="text-xs font-extrabold text-slate-900 font-serif">Q: How is hotel late check-in handled?</h4>
+                            <p className="text-[11px] text-slate-555 leading-relaxed font-semibold">
+                              If your arrival is delayed, our system automatically informs the hotel reception desk via API, sending check-in updates and preventing reservation cancellations for late arrival.
+                            </p>
+                          </div>
                         </div>
-
-                        <AnimatePresence mode="wait">
-                          {bugSuccess ? (
-                            <motion.div
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0 }}
-                              className="p-6 bg-emerald-50 border border-emerald-200 rounded-xl text-center flex flex-col items-center gap-3"
-                            >
-                              <CheckCircle className="w-10 h-10 text-emerald-500" />
-                              <h4 className="font-bold text-slate-900 text-sm font-serif">{t('reportSuccessTitle')}</h4>
-                              <p className="text-xs text-slate-600 font-semibold">{t('reportSuccessDesc')}{bugTicketId}. {t('reportSuccessSub')}</p>
-                            </motion.div>
-                          ) : (
-                            <form onSubmit={handleBugSubmit} className="space-y-4">
-                              <div className="flex flex-col gap-1">
-                                <label className="text-xs font-bold text-slate-655">{t('bugSummary')}</label>
-                                <input
-                                  type="text"
-                                  required
-                                  value={bugSummary}
-                                  onChange={(e) => setBugSummary(e.target.value)}
-                                  placeholder="E.g. Cab pick-up timeline node is showing NaN hours delay"
-                                  className="w-full h-10 px-3 rounded-lg border border-slate-205 text-xs font-semibold focus:outline-none focus:border-[#287DFA] transition"
-                                />
-                              </div>
-
-                              <div className="flex flex-col gap-1">
-                                <label className="text-xs font-bold text-slate-655">{t('bugSteps')}</label>
-                                <textarea
-                                  rows="3"
-                                  value={bugSteps}
-                                  onChange={(e) => setBugSteps(e.target.value)}
-                                  placeholder="1. Go to homepage&#10;2. Build a flight trip&#10;3. Trigger terminal disruption in chaos lab"
-                                  className="w-full p-3 rounded-lg border border-slate-205 text-xs font-semibold focus:outline-none focus:border-[#287DFA] transition resize-none"
-                                />
-                              </div>
-
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div className="flex flex-col gap-1">
-                                  <label className="text-xs font-bold text-slate-655">{t('bugSeverity')}</label>
-                                  <select
-                                    value={bugSeverity}
-                                    onChange={(e) => setBugSeverity(e.target.value)}
-                                    className="h-10 px-3 rounded-lg border border-slate-205 text-xs font-bold bg-slate-50 focus:outline-none focus:border-[#287DFA] transition cursor-pointer"
-                                  >
-                                    <option value="Low">{t('severityLow')}</option>
-                                    <option value="Medium">{t('severityMedium')}</option>
-                                    <option value="High">{t('severityHigh')}</option>
-                                    <option value="Critical">{t('severityCritical')}</option>
-                                  </select>
-                                </div>
-
-                                <div className="flex flex-col gap-1">
-                                  <label className="text-xs font-bold text-slate-655">Mock Screenshot Upload</label>
-                                  <div
-                                    onClick={() => setBugScreenshot('tripresq_screenshot.png')}
-                                    className="h-10 px-3 border border-dashed border-slate-300 rounded-lg flex items-center justify-center gap-1.5 text-xs text-slate-555 cursor-pointer hover:bg-slate-50 transition"
-                                  >
-                                    <Upload className="w-4 h-4 text-slate-400" />
-                                    <span>{bugScreenshot ? bugScreenshot : t('bugScreenshot').split(',')[0]}</span>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <button
-                                type="submit"
-                                className="w-full h-10 bg-[#287DFA] hover:bg-[#1C6BDB] text-white text-xs font-bold rounded-lg transition shadow-sm cursor-pointer"
-                              >
-                                {t('bugSubmit')}
-                              </button>
-                            </form>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    )}
-
-                    {/* Tab 3: Share Feedback */}
-                    {supportTab === 'feedback' && (
-                      <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6 text-left">
-                        <div>
-                          <h3 className="text-base font-extrabold text-slate-905 font-serif">{t('feedbackTitle')}</h3>
-                          <p className="text-slate-450 text-[11px] mt-0.5 font-semibold">{t('feedbackSub')}</p>
-                        </div>
-
-                        <AnimatePresence mode="wait">
-                          {feedbackSuccess ? (
-                            <motion.div
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              exit={{ opacity: 0 }}
-                              className="p-6 bg-emerald-50 border border-emerald-200 rounded-xl text-center flex flex-col items-center gap-3"
-                            >
-                              <CheckCircle className="w-10 h-10 text-emerald-500" />
-                              <h4 className="font-bold text-slate-900 text-sm font-serif">{t('feedbackSuccessTitle')}</h4>
-                              <p className="text-xs text-slate-650 font-semibold">{t('feedbackSuccessDesc')}</p>
-                            </motion.div>
-                          ) : (
-                            <form onSubmit={handleFeedbackSubmit} className="space-y-6">
-                              {/* Star Selection */}
-                              <div className="flex flex-col items-center gap-2 py-4 bg-slate-50/60 rounded-xl">
-                                <span className="text-xs font-bold text-slate-500 font-serif">{t('tapToRate')}</span>
-                                <div className="flex items-center gap-1.5">
-                                  {[1, 2, 3, 4, 5].map((star) => (
-                                    <button
-                                      key={star}
-                                      type="button"
-                                      onClick={() => setFeedbackRating(star)}
-                                      onMouseEnter={() => setFeedbackHover(star)}
-                                      onMouseLeave={() => setFeedbackHover(0)}
-                                      className="p-1 cursor-pointer transition active:scale-90"
-                                    >
-                                      <Star
-                                        className={`w-8 h-8 ${star <= (feedbackHover || feedbackRating)
-                                          ? 'text-amber-450 fill-amber-400 stroke-amber-500'
-                                          : 'text-slate-300 stroke-slate-300'
-                                          }`}
-                                      />
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-
-                              {/* Tags Selection */}
-                              <div className="space-y-2">
-                                <label className="text-xs font-bold text-slate-655 block">{t('feedbackTags')}</label>
-                                <div className="flex flex-wrap gap-2">
-                                  {['#FastRescue', '#CleanLayout', '#ResponsiveSupport', '#ZeroHassle', '#AccurateCalculations'].map(tag => {
-                                    const isSelected = selectedTags.includes(tag);
-                                    return (
-                                      <button
-                                        key={tag}
-                                        type="button"
-                                        onClick={() => {
-                                          if (isSelected) {
-                                            setSelectedTags(prev => prev.filter(t => t !== tag));
-                                          } else {
-                                            setSelectedTags(prev => [...prev, tag]);
-                                          }
-                                        }}
-                                        className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${isSelected
-                                          ? 'bg-slate-900 text-white'
-                                          : 'bg-slate-105 hover:bg-slate-200 text-slate-605'
-                                          }`}
-                                      >
-                                        {tag}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-
-                              {/* Comment */}
-                              <div className="flex flex-col gap-1">
-                                <label className="text-xs font-bold text-slate-655 font-serif font-semibold">Review Comment</label>
-                                <textarea
-                                  rows="3"
-                                  value={feedbackComment}
-                                  onChange={(e) => setFeedbackComment(e.target.value)}
-                                  placeholder={t('feedbackComment')}
-                                  className="w-full p-3 rounded-lg border border-slate-205 text-xs font-semibold focus:outline-none focus:border-[#287DFA] transition resize-none"
-                                />
-                              </div>
-
-                              <button
-                                type="submit"
-                                disabled={feedbackRating === 0}
-                                className={`w-full h-10 text-white text-xs font-bold rounded-lg transition shadow-sm cursor-pointer ${feedbackRating > 0 ? 'bg-[#287DFA] hover:bg-[#1C6BDB]' : 'bg-slate-300 text-slate-555 cursor-not-allowed'
-                                  }`}
-                              >
-                                {t('feedbackSubmit')}
-                              </button>
-                            </form>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    )}
-
-                  </div>
-
-                  {/* Right Side: Chatbot Widget */}
-                  <div className="bg-white rounded-2xl border border-slate-100 shadow-lg flex flex-col h-[480px] overflow-hidden text-left">
-                    {/* Chatbot Header */}
-                    <div className="p-4 bg-[#287DFA] text-white flex items-center gap-3">
-                      <div className="p-2 bg-white/20 rounded-xl">
-                        <Sparkles className="w-5 h-5 text-white" />
-                      </div>
-                      <div>
-                        <h4 className="font-extrabold text-sm font-serif">{t('chatbotTitle')}</h4>
-                        <p className="text-[10px] text-white/80">{t('chatbotSub')}</p>
                       </div>
                     </div>
+                  )}
 
-                    {/* Messages Feed */}
-                    <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-50 custom-scrollbar">
-                      {chatMessages.map(msg => (
+                  {/* Tab 2: Bug Report Form */}
+                  {supportTab === 'bug' && (
+                    <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6 text-left">
+                      <div>
+                        <h3 className="text-base font-extrabold text-slate-900 font-serif">{t('bugTitle')}</h3>
+                        <p className="text-slate-450 text-[11px] mt-0.5 font-semibold">Spotted something broken? File a report so our engineers can fix it.</p>
+                      </div>
+
+                      <AnimatePresence mode="wait">
+                        {bugSuccess ? (
+                          <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0 }}
+                            className="p-6 bg-emerald-50 border border-emerald-200 rounded-xl text-center flex flex-col items-center gap-3"
+                          >
+                            <CheckCircle className="w-10 h-10 text-emerald-500" />
+                            <h4 className="font-bold text-slate-900 text-sm font-serif">{t('reportSuccessTitle')}</h4>
+                            <p className="text-xs text-slate-600 font-semibold">{t('reportSuccessDesc')}{bugTicketId}. {t('reportSuccessSub')}</p>
+                          </motion.div>
+                        ) : (
+                          <form onSubmit={handleBugSubmit} className="space-y-4">
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs font-bold text-slate-655">{t('bugSummary')}</label>
+                              <input
+                                type="text"
+                                required
+                                value={bugSummary}
+                                onChange={(e) => setBugSummary(e.target.value)}
+                                placeholder="E.g. Cab pick-up timeline node is showing NaN hours delay"
+                                className="w-full h-10 px-3 rounded-lg border border-slate-205 text-xs font-semibold focus:outline-none focus:border-[#287DFA] transition"
+                              />
+                            </div>
+
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs font-bold text-slate-655">{t('bugSteps')}</label>
+                              <textarea
+                                rows="3"
+                                value={bugSteps}
+                                onChange={(e) => setBugSteps(e.target.value)}
+                                placeholder="1. Go to homepage&#10;2. Build a flight trip&#10;3. Trigger terminal disruption in chaos lab"
+                                className="w-full p-3 rounded-lg border border-slate-205 text-xs font-semibold focus:outline-none focus:border-[#287DFA] transition resize-none"
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div className="flex flex-col gap-1">
+                                <label className="text-xs font-bold text-slate-655">{t('bugSeverity')}</label>
+                                <select
+                                  value={bugSeverity}
+                                  onChange={(e) => setBugSeverity(e.target.value)}
+                                  className="h-10 px-3 rounded-lg border border-slate-205 text-xs font-bold bg-slate-50 focus:outline-none focus:border-[#287DFA] transition cursor-pointer"
+                                >
+                                  <option value="Low">{t('severityLow')}</option>
+                                  <option value="Medium">{t('severityMedium')}</option>
+                                  <option value="High">{t('severityHigh')}</option>
+                                  <option value="Critical">{t('severityCritical')}</option>
+                                </select>
+                              </div>
+
+                              <div className="flex flex-col gap-1">
+                                <label className="text-xs font-bold text-slate-655">Mock Screenshot Upload</label>
+                                <div 
+                                  onClick={() => setBugScreenshot('tripresq_screenshot.png')}
+                                  className="h-10 px-3 border border-dashed border-slate-300 rounded-lg flex items-center justify-center gap-1.5 text-xs text-slate-555 cursor-pointer hover:bg-slate-50 transition"
+                                >
+                                  <Upload className="w-4 h-4 text-slate-400" />
+                                  <span>{bugScreenshot ? bugScreenshot : t('bugScreenshot').split(',')[0]}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <button
+                              type="submit"
+                              className="w-full h-10 bg-[#287DFA] hover:bg-[#1C6BDB] text-white text-xs font-bold rounded-lg transition shadow-sm cursor-pointer"
+                            >
+                              {t('bugSubmit')}
+                            </button>
+                          </form>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  )}
+
+                  {/* Tab 3: Share Feedback */}
+                  {supportTab === 'feedback' && (
+                    <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6 text-left">
+                      <div>
+                        <h3 className="text-base font-extrabold text-slate-905 font-serif">{t('feedbackTitle')}</h3>
+                        <p className="text-slate-450 text-[11px] mt-0.5 font-semibold">{t('feedbackSub')}</p>
+                      </div>
+
+                      <AnimatePresence mode="wait">
+                        {feedbackSuccess ? (
+                          <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0 }}
+                            className="p-6 bg-emerald-50 border border-emerald-200 rounded-xl text-center flex flex-col items-center gap-3"
+                          >
+                            <CheckCircle className="w-10 h-10 text-emerald-500" />
+                            <h4 className="font-bold text-slate-900 text-sm font-serif">{t('feedbackSuccessTitle')}</h4>
+                            <p className="text-xs text-slate-650 font-semibold">{t('feedbackSuccessDesc')}</p>
+                          </motion.div>
+                        ) : (
+                          <form onSubmit={handleFeedbackSubmit} className="space-y-6">
+                            {/* Star Selection */}
+                            <div className="flex flex-col items-center gap-2 py-4 bg-slate-50/60 rounded-xl">
+                              <span className="text-xs font-bold text-slate-500 font-serif">{t('tapToRate')}</span>
+                              <div className="flex items-center gap-1.5">
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                  <button
+                                    key={star}
+                                    type="button"
+                                    onClick={() => setFeedbackRating(star)}
+                                    onMouseEnter={() => setFeedbackHover(star)}
+                                    onMouseLeave={() => setFeedbackHover(0)}
+                                    className="p-1 cursor-pointer transition active:scale-90"
+                                  >
+                                    <Star 
+                                      className={`w-8 h-8 ${
+                                        star <= (feedbackHover || feedbackRating) 
+                                          ? 'text-amber-450 fill-amber-400 stroke-amber-500' 
+                                          : 'text-slate-300 stroke-slate-300'
+                                      }`} 
+                                    />
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Tags Selection */}
+                            <div className="space-y-2">
+                              <label className="text-xs font-bold text-slate-655 block">{t('feedbackTags')}</label>
+                              <div className="flex flex-wrap gap-2">
+                                {['#FastRescue', '#CleanLayout', '#ResponsiveSupport', '#ZeroHassle', '#AccurateCalculations'].map(tag => {
+                                  const isSelected = selectedTags.includes(tag);
+                                  return (
+                                    <button
+                                      key={tag}
+                                      type="button"
+                                      onClick={() => {
+                                        if (isSelected) {
+                                          setSelectedTags(prev => prev.filter(t => t !== tag));
+                                        } else {
+                                          setSelectedTags(prev => [...prev, tag]);
+                                        }
+                                      }}
+                                      className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer ${
+                                        isSelected 
+                                          ? 'bg-slate-900 text-white' 
+                                          : 'bg-slate-105 hover:bg-slate-200 text-slate-605'
+                                      }`}
+                                    >
+                                      {tag}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Comment */}
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs font-bold text-slate-655 font-serif font-semibold">Review Comment</label>
+                              <textarea
+                                rows="3"
+                                value={feedbackComment}
+                                onChange={(e) => setFeedbackComment(e.target.value)}
+                                placeholder={t('feedbackComment')}
+                                className="w-full p-3 rounded-lg border border-slate-205 text-xs font-semibold focus:outline-none focus:border-[#287DFA] transition resize-none"
+                              />
+                            </div>
+
+                            <button
+                              type="submit"
+                              disabled={feedbackRating === 0}
+                              className={`w-full h-10 text-white text-xs font-bold rounded-lg transition shadow-sm cursor-pointer ${
+                                feedbackRating > 0 ? 'bg-[#287DFA] hover:bg-[#1C6BDB]' : 'bg-slate-300 text-slate-555 cursor-not-allowed'
+                              }`}
+                            >
+                              {t('feedbackSubmit')}
+                            </button>
+                          </form>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  )}
+
+                </div>
+
+                {/* Right Side: Chatbot Widget */}
+                <div className="bg-white rounded-2xl border border-slate-100 shadow-lg flex flex-col h-[480px] overflow-hidden text-left">
+                  {/* Chatbot Header */}
+                  <div className="p-4 bg-[#287DFA] text-white flex items-center gap-3">
+                    <div className="p-2 bg-white/20 rounded-xl">
+                      <Sparkles className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-sm font-serif">{t('chatbotTitle')}</h4>
+                      <p className="text-[10px] text-white/80">{t('chatbotSub')}</p>
+                    </div>
+                  </div>
+
+                  {/* Messages Feed */}
+                  <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-50 custom-scrollbar">
+                    {chatMessages.map(msg => (
+                      <div
+                        key={msg.id}
+                        className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+                      >
                         <div
-                          key={msg.id}
-                          className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-                        >
-                          <div
-                            className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-xs leading-relaxed ${msg.sender === 'user'
+                          className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-xs leading-relaxed ${
+                            msg.sender === 'user'
                               ? 'bg-[#287DFA] text-white rounded-tr-none'
                               : 'bg-white text-slate-850 border border-slate-100 rounded-tl-none shadow-xs'
-                              }`}
-                          >
-                            {msg.text}
-                          </div>
+                          }`}
+                        >
+                          {msg.text}
                         </div>
-                      ))}
-                      {isChatTyping && (
-                        <div className="flex justify-start">
-                          <div className="bg-white border border-slate-100 text-slate-400 rounded-2xl rounded-tl-none px-4 py-2 text-xs flex items-center gap-1 shadow-xs">
-                            <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" />
-                            <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce [animation-delay:0.2s]" />
-                            <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce [animation-delay:0.4s]" />
-                          </div>
+                      </div>
+                    ))}
+                    {isChatTyping && (
+                      <div className="flex justify-start">
+                        <div className="bg-white border border-slate-100 text-slate-400 rounded-2xl rounded-tl-none px-4 py-2 text-xs flex items-center gap-1 shadow-xs">
+                          <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" />
+                          <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce [animation-delay:0.2s]" />
+                          <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce [animation-delay:0.4s]" />
                         </div>
-                      )}
-                    </div>
-
-                    {/* Quick query chips */}
-                    <div className="px-4 py-2 border-t border-slate-55 flex gap-1.5 overflow-x-auto whitespace-nowrap custom-scrollbar bg-white">
-                      <button
-                        onClick={() => handleQuickChatPrompt("My flight is delayed, what do I do?")}
-                        className="px-2.5 py-1 bg-slate-50 hover:bg-slate-105 border border-slate-200 text-[10px] font-bold text-slate-605 rounded-full transition shrink-0 cursor-pointer font-semibold"
-                      >
-                        {t('chatbotChipDelay')}
-                      </button>
-                      <button
-                        onClick={() => handleQuickChatPrompt("How do I claim a full refund?")}
-                        className="px-2.5 py-1 bg-slate-50 hover:bg-slate-105 border border-slate-200 text-[10px] font-bold text-[#FF7700] rounded-full transition shrink-0 cursor-pointer font-semibold"
-                      >
-                        {t('chatbotChipRefund')}
-                      </button>
-                      <button
-                        onClick={() => handleQuickChatPrompt("Is my hotel stay check-in safe?")}
-                        className="px-2.5 py-1 bg-slate-50 hover:bg-slate-105 border border-slate-200 text-[10px] font-bold text-slate-605 rounded-full transition shrink-0 cursor-pointer font-semibold"
-                      >
-                        {t('chatbotChipHotel')}
-                      </button>
-                    </div>
-
-                    {/* Input Form */}
-                    <form onSubmit={handleChatSubmit} className="p-3 border-t border-slate-100 flex gap-2 bg-white">
-                      <input
-                        type="text"
-                        value={chatInput}
-                        onChange={(e) => setChatInput(e.target.value)}
-                        placeholder={t('chatPlaceholder')}
-                        className="flex-1 px-3 h-9 rounded-lg border border-slate-200 text-xs focus:outline-none focus:border-[#287DFA] transition font-semibold"
-                      />
-                      <button
-                        type="submit"
-                        className="p-2.5 bg-[#287DFA] hover:bg-[#1C6BDB] text-white rounded-lg transition cursor-pointer active:scale-95 flex items-center justify-center animate-pulse"
-                      >
-                        <Send className="w-3.5 h-3.5" />
-                      </button>
-                    </form>
-
+                      </div>
+                    )}
                   </div>
 
-                </div>
-              </motion.div>
-            )
-          }
+                  {/* Quick query chips */}
+                  <div className="px-4 py-2 border-t border-slate-55 flex gap-1.5 overflow-x-auto whitespace-nowrap custom-scrollbar bg-white">
+                    <button
+                      onClick={() => handleQuickChatPrompt("My flight is delayed, what do I do?")}
+                      className="px-2.5 py-1 bg-slate-50 hover:bg-slate-105 border border-slate-200 text-[10px] font-bold text-slate-605 rounded-full transition shrink-0 cursor-pointer font-semibold"
+                    >
+                      {t('chatbotChipDelay')}
+                    </button>
+                    <button
+                      onClick={() => handleQuickChatPrompt("How do I claim a full refund?")}
+                      className="px-2.5 py-1 bg-slate-50 hover:bg-slate-105 border border-slate-200 text-[10px] font-bold text-[#FF7700] rounded-full transition shrink-0 cursor-pointer font-semibold"
+                    >
+                      {t('chatbotChipRefund')}
+                    </button>
+                    <button
+                      onClick={() => handleQuickChatPrompt("Is my hotel stay check-in safe?")}
+                      className="px-2.5 py-1 bg-slate-50 hover:bg-slate-105 border border-slate-200 text-[10px] font-bold text-slate-605 rounded-full transition shrink-0 cursor-pointer font-semibold"
+                    >
+                      {t('chatbotChipHotel')}
+                    </button>
+                  </div>
 
-        </AnimatePresence >
-      </div >
+                  {/* Input Form */}
+                  <form onSubmit={handleChatSubmit} className="p-3 border-t border-slate-100 flex gap-2 bg-white">
+                    <input
+                      type="text"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      placeholder={t('chatPlaceholder')}
+                      className="flex-1 px-3 h-9 rounded-lg border border-slate-200 text-xs focus:outline-none focus:border-[#287DFA] transition font-semibold"
+                    />
+                    <button
+                      type="submit"
+                      className="p-2.5 bg-[#287DFA] hover:bg-[#1C6BDB] text-white rounded-lg transition cursor-pointer active:scale-95 flex items-center justify-center animate-pulse"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                    </button>
+                  </form>
+
+                </div>
+
+              </div>
+            </motion.div>
+          )}
+
+        </AnimatePresence>
+      </div>
 
       {/* --- Global Footer Area --- */}
-      < footer className="bg-white border-t border-slate-100 py-8 px-6 mt-12 text-center text-left" >
+      <footer className="bg-white border-t border-slate-100 py-8 px-6 mt-12 text-center text-left">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-slate-450 font-mono">
           <p>{t('allRightsReserved')}</p>
           <div className="flex gap-4">
@@ -3897,10 +3652,15 @@ function App() {
             <a href="#contact" className="hover:text-slate-600 font-semibold">{t('contactHelpDesk')}</a>
           </div>
         </div>
-      </footer >
+      </footer>
 
       {/* --- Authentication Sign In / Sign Up Modal --- */}
-      < AnimatePresence >
+      <AnimatePresence>
+      {/* Onboarding Guide */}
+      {userAuth.loggedIn && (
+        <OnboardingGuide onNavigate={setCurrentPage} />
+      )}
+
         {showAuthModal && (
           <motion.div
             initial={{ opacity: 0 }}
@@ -3919,16 +3679,18 @@ function App() {
                 <button
                   type="button"
                   onClick={() => setAuthTab('signin')}
-                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider text-center cursor-pointer transition ${authTab === 'signin' ? 'bg-white text-[#287DFA] border-r border-slate-100 font-extrabold' : 'text-slate-455 hover:bg-slate-100/50'
-                    }`}
+                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider text-center cursor-pointer transition ${
+                    authTab === 'signin' ? 'bg-white text-[#287DFA] border-r border-slate-100 font-extrabold' : 'text-slate-455 hover:bg-slate-100/50'
+                  }`}
                 >
                   {t('signInTab')}
                 </button>
                 <button
                   type="button"
                   onClick={() => setAuthTab('signup')}
-                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider text-center cursor-pointer transition ${authTab === 'signup' ? 'bg-white text-[#287DFA] border-l border-slate-100 font-extrabold' : 'text-slate-455 hover:bg-slate-100/50'
-                    }`}
+                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider text-center cursor-pointer transition ${
+                    authTab === 'signup' ? 'bg-white text-[#287DFA] border-l border-slate-100 font-extrabold' : 'text-slate-455 hover:bg-slate-100/50'
+                  }`}
                 >
                   {t('signUpTab')}
                 </button>
@@ -3996,33 +3758,34 @@ function App() {
                   {authTab === 'signin' ? t('signInTab') : t('signUpBtn')}
                 </button>
 
-                {/* Social logins */}
-                <div className="space-y-2 pt-2 border-t border-slate-100">
-                  <span className="text-[9px] font-bold text-slate-455 block text-center uppercase tracking-wider">{t('socialSignIn')}</span>
+                {/* Demo Quick Logins */}
+                <div className="space-y-2.5 pt-3 border-t border-slate-100">
+                  <span className="text-[9px] font-bold text-slate-455 block text-center uppercase tracking-wider">Quick Demo Access</span>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={() => {
-                        setUserAuth({ loggedIn: true, user: { name: t('googleUser'), email: 'traveler@google.com' } });
+                        setUserAuth({ loggedIn: true, user: { name: t('googleUser'), email: 'demo@tripresq.com' } });
                         setShowAuthModal(false);
                         setCurrentPage('home');
                       }}
-                      className="h-8 border border-slate-200 rounded-lg text-[10px] font-bold hover:bg-slate-55 cursor-pointer transition flex items-center justify-center gap-1.5"
+                      className="h-9 border border-emerald-200 bg-emerald-50 rounded-lg text-[10px] font-bold hover:bg-emerald-100 cursor-pointer transition flex items-center justify-center gap-1.5 text-emerald-700"
                     >
-                      <Sparkles className="w-3.5 h-3.5 text-[#FF7700]" /> Google
+                      <Sparkles className="w-3.5 h-3.5" /> 🚀 Demo (Google)
                     </button>
                     <button
                       type="button"
                       onClick={() => {
-                        setUserAuth({ loggedIn: true, user: { name: t('otpUser'), email: 'otp@tripresq.com' } });
+                        setUserAuth({ loggedIn: true, user: { name: t('otpUser'), email: 'demo@tripresq.com' } });
                         setShowAuthModal(false);
                         setCurrentPage('home');
                       }}
-                      className="h-8 border border-slate-200 rounded-lg text-[10px] font-bold hover:bg-slate-55 cursor-pointer transition flex items-center justify-center gap-1.5"
+                      className="h-9 border border-emerald-200 bg-emerald-50 rounded-lg text-[10px] font-bold hover:bg-emerald-100 cursor-pointer transition flex items-center justify-center gap-1.5 text-emerald-700"
                     >
-                      <Clock className="w-3.5 h-3.5 text-[#287DFA]" /> OTP
+                      <Clock className="w-3.5 h-3.5" /> 🚀 Demo (OTP)
                     </button>
                   </div>
+                  <p className="text-[9px] text-slate-400 text-center font-medium">Demo mode — no real credentials required</p>
                 </div>
               </form>
 
@@ -4037,9 +3800,9 @@ function App() {
             </motion.div>
           </motion.div>
         )}
-      </AnimatePresence >
+      </AnimatePresence>
 
-    </div >
+    </div>
   );
 }
 
