@@ -25,15 +25,24 @@ def create_trip():
       201:
         description: Trip created
     """
-    data = request.get_json()
+    data = request.get_json(silent=True)
     if not data or 'name' not in data:
         return jsonify({"error": "Name is required"}), 400
         
-    trip = Trip(name=data['name'])
-    db.session.add(trip)
-    db.session.commit()
-    
-    return jsonify({"id": trip.id, "name": trip.name}), 201
+    try:
+        trip = Trip(name=data['name'])
+        db.session.add(trip)
+        db.session.commit()
+        return jsonify({"id": trip.id, "name": trip.name}), 201
+    except Exception as e:
+        db.session.rollback()
+        import logging
+        logging.getLogger(__name__).exception("Database error while creating trip")
+        return jsonify({
+            "error": "Failed to create trip",
+            "message": str(e),
+            "type": type(e).__name__
+        }), 500
 
 @trips_bp.route('', methods=['GET'])
 def list_trips():
@@ -166,17 +175,25 @@ def disrupt_trip(trip_id):
         else:
             impacts = res
             metrics = impacts.get("metrics", {})
+            
+        graph_response = get_trip_graph(trip_id)[0].get_json()
+        return jsonify({
+            "message": "Disruption applied and propagated successfully",
+            "impacts": impacts,
+            "metrics": metrics,
+            "updated_graph": graph_response
+        }), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-
-    # Return the updated graph and the diagnostic breakdown
-    graph_response = get_trip_graph(trip_id)[0].get_json()
-    return jsonify({
-        "message": "Disruption applied and propagated successfully",
-        "impacts": impacts,
-        "metrics": metrics,
-        "updated_graph": graph_response
-    }), 200
+    except Exception as e:
+        db.session.rollback()
+        import logging
+        logging.getLogger(__name__).exception("Database error while applying disruption")
+        return jsonify({
+            "error": "Failed to apply disruption",
+            "message": str(e),
+            "type": type(e).__name__
+        }), 500
 
 from app.services.recovery import generate_recovery_proposals, generate_recovery_plans, apply_recovery_plan
 

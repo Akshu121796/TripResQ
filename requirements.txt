@@ -7,3 +7,4 @@ pytest
 pytest-flask
 gunicorn
 Flask-Migrate
+psycopg2-binary

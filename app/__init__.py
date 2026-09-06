@@ -55,27 +55,55 @@ def create_app(test_config=None):
     Swagger(app, config=swagger_config)
     
     if test_config is None:
-        db_path = os.path.join(app.instance_path, 'tripresq.sqlite')
-        app.config.from_mapping(
-            SECRET_KEY='dev',
-            SQLALCHEMY_DATABASE_URI=f'sqlite:///{db_path}',
-            SQLALCHEMY_TRACK_MODIFICATIONS=False,
-        )
+        database_url = os.environ.get('DATABASE_URL')
+        if database_url:
+            # Render/Heroku provide postgres:// URLs, SQLAlchemy 1.4+ requires postgresql://
+            if database_url.startswith('postgres://'):
+                database_url = database_url.replace('postgres://', 'postgresql://', 1)
+            app.config.from_mapping(
+                SECRET_KEY=os.environ.get('SECRET_KEY', 'dev'),
+                SQLALCHEMY_DATABASE_URI=database_url,
+                SQLALCHEMY_TRACK_MODIFICATIONS=False,
+                SQLALCHEMY_ENGINE_OPTIONS={
+                    "pool_pre_ping": True,
+                    "pool_recycle": 300,
+                }
+            )
+        else:
+            # Local development SQLite fallback
+            try:
+                os.makedirs(app.instance_path, exist_ok=True)
+            except OSError:
+                pass
+            db_path = os.path.join(app.instance_path, 'tripresq.sqlite')
+            app.config.from_mapping(
+                SECRET_KEY=os.environ.get('SECRET_KEY', 'dev'),
+                SQLALCHEMY_DATABASE_URI=f'sqlite:///{db_path}',
+                SQLALCHEMY_TRACK_MODIFICATIONS=False,
+                SQLALCHEMY_ENGINE_OPTIONS={
+                    "connect_args": {"timeout": 30}
+                }
+            )
     else:
         app.config.from_mapping(test_config)
 
-    # ensure the instance folder exists
+    # ensure the instance folder exists for local sqlite
     try:
-        os.makedirs(app.instance_path)
+        os.makedirs(app.instance_path, exist_ok=True)
     except OSError:
         pass
 
     db.init_app(app)
     migrate.init_app(app, db)
     
-    # Import models so they are registered with SQLAlchemy
+    # Import models and execute migrations / schema creation
     with app.app_context():
         from app import models
+        try:
+            from flask_migrate import upgrade as _flask_migrate_upgrade
+            _flask_migrate_upgrade()
+        except Exception as mig_err:
+            app.logger.warning(f"Database migration auto-upgrade skipped or handled: {mig_err}")
         db.create_all()
         if not app.config.get("TESTING"):
             try:
@@ -98,6 +126,52 @@ def create_app(test_config=None):
     @app.route('/health')
     def health():
         return {'status': 'ok'}
+
+    @app.route('/ready')
+    def ready():
+        from sqlalchemy import text, inspect
+        from flask import jsonify
+        db_status = {
+            "status": "ok",
+            "database": None,
+            "connected": False,
+            "tables": [],
+            "demo_trip_exists": False,
+            "trip_count": 0,
+            "database_url_configured": bool(os.environ.get("DATABASE_URL")),
+        }
+        try:
+            engine = db.engine
+            db_status["database"] = engine.dialect.name
+            db.session.execute(text("SELECT 1"))
+            db_status["connected"] = True
+
+            inspector = inspect(engine)
+            tables = inspector.get_table_names()
+            db_status["tables"] = tables
+
+            from app.models.trip import Trip
+            db_status["trip_count"] = db.session.query(Trip).count()
+            from app.mock_data.seed import demo_trip_exists
+            db_status["demo_trip_exists"] = demo_trip_exists()
+
+            return jsonify(db_status), 200
+        except Exception as e:
+            app.logger.exception(f"Readiness check failed: {e}")
+            db_status["status"] = "degraded"
+            db_status["connected"] = False
+            db_status["error"] = str(e)
+            return jsonify(db_status), 503
+
+    @app.errorhandler(500)
+    def handle_500(e):
+        import logging
+        logging.getLogger(__name__).exception(f"Internal server error: {e}")
+        from flask import jsonify
+        return jsonify({
+            "error": "Internal server error",
+            "message": str(e)
+        }), 500
 
     @app.route('/api/seed-demo', methods=['POST'])
     def seed_demo():

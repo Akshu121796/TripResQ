@@ -75,13 +75,23 @@ def add_node():
         except ValueError:
             pass
 
-    db.session.add(node)
-    db.session.commit()
-    
-    # Run dynamic auto-linker engine
-    run_auto_linker(data['trip_id'])
-    
-    return jsonify({
-        "id": node.id,
-        "message": "Node added successfully, graph dependencies dynamically recalculated."
-    }), 201
+    try:
+        db.session.add(node)
+        db.session.commit()
+        
+        # Run dynamic auto-linker engine
+        run_auto_linker(data['trip_id'])
+        
+        return jsonify({
+            "id": node.id,
+            "message": "Node added successfully, graph dependencies dynamically recalculated."
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        import logging
+        logging.getLogger(__name__).exception("Database error while adding node")
+        return jsonify({
+            "error": "Failed to add node",
+            "message": str(e),
+            "type": type(e).__name__
+        }), 500
