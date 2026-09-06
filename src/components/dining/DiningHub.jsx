@@ -29,12 +29,12 @@ export default function DiningHub({
 
   // Next stop data from backend
   const [nextStopData, setNextStopData] = useState(null);
-  const [isLoadingNextStop, setIsLoadingNextStop] = useState(false);
+  const [isLoadingNextStop, setIsLoadingNextStop] = useState(true);
 
   // Active resolved coordinate & location context
   const [currentCoords, setCurrentCoords] = useState(null); // { lat, lng, displayName, name }
-  const [resolvedLocationName, setResolvedLocationName] = useState('Taj Fort Aguada, Goa');
-  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+  const [resolvedLocationName, setResolvedLocationName] = useState(activeDestination || 'Taj Fort Aguada, Goa');
+  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
   const [locationError, setLocationError] = useState(null);
 
   // Filters & Radius (1km, 3km, 5km)
@@ -46,7 +46,7 @@ export default function DiningHub({
 
   // Results & UI
   const [rawRestaurants, setRawRestaurants] = useState([]);
-  const [isLoadingRestaurants, setIsLoadingRestaurants] = useState(false);
+  const [isLoadingRestaurants, setIsLoadingRestaurants] = useState(true);
   const [selectedRestaurant, setSelectedRestaurant] = useState(null);
 
   const effectiveTripId = tripId || tripRef || 'TR-998827';
@@ -236,7 +236,6 @@ export default function DiningHub({
   // 3. Real Nearby Restaurant Query via OpenStreetMap Overpass
   useEffect(() => {
     if (!currentCoords || currentCoords.lat == null || currentCoords.lng == null) {
-      setRawRestaurants([]);
       return;
     }
 
@@ -250,13 +249,12 @@ export default function DiningHub({
     getNearbyRestaurants(currentCoords.lat, currentCoords.lng, radiusMeters)
       .then((results) => {
         if (!isMounted) return;
-        setRawRestaurants(results);
-        console.log(`[dining] restaurants=${results.length}`);
+        setRawRestaurants(results || []);
+        console.log(`[dining] restaurants=${results?.length || 0}`);
       })
       .catch((err) => {
         if (!isMounted) return;
         console.error('[dining] Failed to fetch Overpass restaurants:', err);
-        setRawRestaurants([]);
       })
       .finally(() => {
         if (isMounted) {
@@ -397,7 +395,7 @@ export default function DiningHub({
         radiusKm={radiusKm}
         currentPage={currentPage}
         onPageChange={setCurrentPage}
-        isLoading={isLoadingRestaurants || isLoadingLocation}
+        isLoading={isLoadingRestaurants || isLoadingLocation || isLoadingNextStop}
         error={locationError}
         activeFilter={activeFilter}
         onResetFilters={() => handleFilterChange('all')}
