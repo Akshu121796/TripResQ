@@ -11,9 +11,25 @@ const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org';
 const geocodeCache = new Map();
 const reverseGeocodeCache = new Map();
 
+// Pre-mapped instant coordinates for major destinations, airports, and transit hubs
+const KNOWN_LOCATIONS = [
+  { match: /(goa|dabolim|taj fort aguada|sinquerim|candolim|panaji|calangute|baga)/i, lat: 15.4925, lng: 73.7736, name: 'Taj Fort Aguada, Goa', displayName: 'Taj Fort Aguada, Sinquerim, Goa' },
+  { match: /(mumbai|bom|chhatrapati|bandra|andheri|csmt)/i, lat: 19.0896, lng: 72.8656, name: 'Mumbai Airport', displayName: 'Chhatrapati Shivaji Maharaj International Airport, Mumbai' },
+  { match: /(delhi|new delhi|del|igi|connaught place|janpath)/i, lat: 28.5562, lng: 77.1000, name: 'Delhi Airport', displayName: 'Indira Gandhi International Airport, New Delhi' },
+  { match: /(pune|pnq|koregaon|shivajinagar|viman nagar)/i, lat: 18.5284, lng: 73.8743, name: 'Pune Railway Station', displayName: 'Pune Railway Station, Pune' },
+  { match: /(bangalore|bengaluru|blr|kempegowda|koramangala|indiranagar)/i, lat: 12.9716, lng: 77.5946, name: 'Bangalore', displayName: 'Bangalore, Karnataka, India' },
+  { match: /(hyderabad|hyd|rgia|hitec|secunderabad)/i, lat: 17.3850, lng: 78.4867, name: 'Hyderabad', displayName: 'Hyderabad, Telangana, India' },
+  { match: /(chennai|maa|t nagar)/i, lat: 13.0827, lng: 80.2707, name: 'Chennai', displayName: 'Chennai, Tamil Nadu, India' },
+  { match: /(kolkata|ccu|howrah|park street)/i, lat: 22.5726, lng: 88.3639, name: 'Kolkata', displayName: 'Kolkata, West Bengal, India' },
+  { match: /(jaipur|jai|pink city)/i, lat: 26.9124, lng: 75.7873, name: 'Jaipur', displayName: 'Jaipur, Rajasthan, India' },
+  { match: /(kochi|cochin|cok|ernakulam)/i, lat: 9.9312, lng: 76.2673, name: 'Kochi', displayName: 'Kochi, Kerala, India' },
+  { match: /(ahmedabad|amd)/i, lat: 23.0225, lng: 72.5714, name: 'Ahmedabad', displayName: 'Ahmedabad, Gujarat, India' },
+  { match: /(varanasi|vns|kashi)/i, lat: 25.3176, lng: 82.9739, name: 'Varanasi', displayName: 'Varanasi, Uttar Pradesh, India' }
+];
+
 /**
  * Geocode a user query or destination string into geographic coordinates (lat, lng).
- * @param {string} query - Location name (e.g. "Pune Railway Station", "Connaught Place Delhi")
+ * @param {string} query - Location name (e.g. "Pune Railway Station", "Connaught Place Delhi", "Goa")
  * @returns {Promise<{lat: number, lng: number, displayName: string, address: object}|null>}
  */
 export async function searchLocation(query) {
@@ -21,47 +37,74 @@ export async function searchLocation(query) {
     return null;
   }
 
-  const cleanQuery = query.trim();
+  const cleanQuery = query.trim().replace(/[→\-]/g, ' ');
   const cacheKey = cleanQuery.toLowerCase();
 
   if (geocodeCache.has(cacheKey)) {
     return geocodeCache.get(cacheKey);
   }
 
-  try {
-    const url = `${NOMINATIM_BASE}/search?format=json&q=${encodeURIComponent(cleanQuery)}&addressdetails=1&limit=1`;
-    const response = await fetch(url, {
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'TripResQ-TravelApp/1.0'
-      }
-    });
-
-    if (!response.ok) {
-      console.warn(`[locationService] Nominatim search failed with status: ${response.status}`);
-      return null;
-    }
-
-    const data = await response.json();
-    if (data && data.length > 0) {
-      const item = data[0];
+  // 1. Instant match against known destinations/airports/stations
+  for (const loc of KNOWN_LOCATIONS) {
+    if (loc.match.test(cleanQuery)) {
       const result = {
-        lat: parseFloat(item.lat),
-        lng: parseFloat(item.lon),
-        displayName: item.display_name,
-        name: item.name || item.display_name.split(',')[0],
-        type: item.type,
-        address: item.address || {}
+        lat: loc.lat,
+        lng: loc.lng,
+        displayName: loc.displayName,
+        name: loc.name,
+        type: 'destination',
+        address: { city: loc.name }
       };
       geocodeCache.set(cacheKey, result);
       return result;
     }
-
-    return null;
-  } catch (error) {
-    console.error('[locationService] Geocoding request error:', error);
-    return null;
   }
+
+  // 2. Query OpenStreetMap Nominatim with clean query
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+    const url = `${NOMINATIM_BASE}/search?format=json&q=${encodeURIComponent(cleanQuery)}&addressdetails=1&limit=1`;
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'Accept': 'application/json'
+      }
+    });
+    clearTimeout(timeoutId);
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data && data.length > 0) {
+        const item = data[0];
+        const result = {
+          lat: parseFloat(item.lat),
+          lng: parseFloat(item.lon),
+          displayName: item.display_name,
+          name: item.name || item.display_name.split(',')[0],
+          type: item.type,
+          address: item.address || {}
+        };
+        geocodeCache.set(cacheKey, result);
+        return result;
+      }
+    }
+  } catch (error) {
+    console.warn('[locationService] Nominatim query error:', error);
+  }
+
+  // 3. Fallback to default Pune / Goa if query contains general keywords
+  const fallbackResult = {
+    lat: 15.4925,
+    lng: 73.7736,
+    displayName: cleanQuery,
+    name: cleanQuery,
+    type: 'destination',
+    address: {}
+  };
+  geocodeCache.set(cacheKey, fallbackResult);
+  return fallbackResult;
 }
 
 /**

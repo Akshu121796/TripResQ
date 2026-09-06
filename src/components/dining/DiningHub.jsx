@@ -9,7 +9,7 @@ import { searchLocation, getUserLocation } from '../../services/locationService'
 import { getNearbyRestaurants } from '../../services/restaurantService';
 import { getRestaurantImage } from '../../services/restaurantImageService';
 
-const BACKEND_BASE = 'http://localhost:5000';
+const BACKEND_BASE = import.meta.env?.VITE_API_BASE_URL || (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'http://localhost:5000' : '');
 
 /**
  * DiningHub: Travel-Aware Real Nearby Restaurant Discovery
@@ -21,7 +21,7 @@ export default function DiningHub({
   tripId,
   tripRef,
   currentTripNodes = [],
-  activeDestination = 'Pune'
+  activeDestination = 'Goa'
 }) {
   // Mode: 'next_stop' | 'current_loc' | 'search'
   const [activeMode, setActiveMode] = useState('next_stop');
@@ -33,7 +33,7 @@ export default function DiningHub({
 
   // Active resolved coordinate & location context
   const [currentCoords, setCurrentCoords] = useState(null); // { lat, lng, displayName, name }
-  const [resolvedLocationName, setResolvedLocationName] = useState('Pune Railway Station');
+  const [resolvedLocationName, setResolvedLocationName] = useState('Taj Fort Aguada, Goa');
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [locationError, setLocationError] = useState(null);
 
@@ -56,16 +56,17 @@ export default function DiningHub({
     setIsLoadingNextStop(true);
     setLocationError(null);
     try {
-      const resp = await fetch(`${BACKEND_BASE}/api/trips/${effectiveTripId}/next-stop`);
-      if (resp.ok) {
-        const data = await resp.json();
-        setNextStopData(data);
-        return data;
-      } else {
-        const fallbackStop = deriveNextStopFromNodes(currentTripNodes, activeDestination);
-        setNextStopData(fallbackStop);
-        return fallbackStop;
+      if (BACKEND_BASE) {
+        const resp = await fetch(`${BACKEND_BASE}/api/trips/${effectiveTripId}/next-stop`);
+        if (resp.ok) {
+          const data = await resp.json();
+          setNextStopData(data);
+          return data;
+        }
       }
+      const fallbackStop = deriveNextStopFromNodes(currentTripNodes, activeDestination);
+      setNextStopData(fallbackStop);
+      return fallbackStop;
     } catch (err) {
       console.warn('[dining] Next-stop API check failed, using local trip nodes:', err);
       const fallbackStop = deriveNextStopFromNodes(currentTripNodes, activeDestination);
@@ -78,15 +79,31 @@ export default function DiningHub({
 
   // Client-side fallback to inspect itinerary nodes
   const deriveNextStopFromNodes = (nodes, destinationFallback) => {
+    const dest = destinationFallback || 'Goa';
     if (!nodes || nodes.length === 0) {
       return {
         available: true,
-        node_id: 'default-pune',
+        node_id: 'default-destination',
         node_type: 'TRAIN',
-        name: `${destinationFallback || 'Pune'} Railway Station`,
-        location: `${destinationFallback || 'Pune'} Railway Station`,
-        destination: destinationFallback || 'Pune',
+        name: `${dest} Railway Station`,
+        location: `${dest} Railway Station`,
+        destination: dest,
         arrival_time: '19:35',
+        latitude: null,
+        longitude: null
+      };
+    }
+
+    const hotelNode = nodes.find(n => (n.type || '').toLowerCase() === 'hotel');
+    if (hotelNode) {
+      return {
+        available: true,
+        node_id: hotelNode.id,
+        node_type: 'HOTEL',
+        name: hotelNode.title || `${dest} Hotel`,
+        location: hotelNode.location || hotelNode.sub || dest,
+        destination: dest,
+        arrival_time: hotelNode.scheduledStart || hotelNode.actualStart || '13:00',
         latitude: null,
         longitude: null
       };
@@ -95,16 +112,16 @@ export default function DiningHub({
     const trainOrFlight = nodes.find(n => (n.type || '').toLowerCase() === 'train' || (n.type || '').toLowerCase() === 'flight');
     if (trainOrFlight) {
       const typeUpper = (trainOrFlight.type || '').toUpperCase();
-      let stopName = `${destinationFallback || 'Pune'} Railway Station`;
-      if (typeUpper === 'FLIGHT') stopName = `${destinationFallback || 'Delhi'} Airport`;
+      let stopName = `${dest} Railway Station`;
+      if (typeUpper === 'FLIGHT') stopName = `${dest} Airport`;
 
       return {
         available: true,
         node_id: trainOrFlight.id,
         node_type: typeUpper,
         name: stopName,
-        location: stopName,
-        destination: destinationFallback || 'Pune',
+        location: trainOrFlight.location || stopName,
+        destination: dest,
         arrival_time: trainOrFlight.scheduledEnd || trainOrFlight.actualEnd || '19:35',
         latitude: null,
         longitude: null
@@ -115,9 +132,9 @@ export default function DiningHub({
       available: true,
       node_id: nodes[0].id,
       node_type: (nodes[0].type || 'ACTIVITY').toUpperCase(),
-      name: nodes[0].title || `${destinationFallback} Destination`,
+      name: nodes[0].title || `${dest} Destination`,
       location: nodes[0].title,
-      destination: destinationFallback,
+      destination: dest,
       arrival_time: nodes[0].scheduledStart || '19:35',
       latitude: null,
       longitude: null
@@ -133,21 +150,11 @@ export default function DiningHub({
     try {
       if (mode === 'next_stop') {
         const stop = stopOverride || nextStopData || (await fetchNextStop());
-        if (!stop || !stop.available) {
-          setLocationError(
-            stop?.reason === 'NO_ACTIVE_TRIP'
-              ? 'No active trip found. Use your current location or search an area instead.'
-              : 'Your itinerary has no upcoming stops. Try current location or search manually.'
-          );
-          setIsLoadingLocation(false);
-          return;
-        }
-
-        const queryToGeocode = stop.name || stop.location || stop.destination || activeDestination;
+        const queryToGeocode = stop?.destination || stop?.name || stop?.location || activeDestination || 'Goa';
         const geocoded = await searchLocation(queryToGeocode);
 
         if (geocoded) {
-          const locName = stop.name || geocoded.name || queryToGeocode;
+          const locName = stop?.name || geocoded.name || queryToGeocode;
           setCurrentCoords({
             lat: geocoded.lat,
             lng: geocoded.lng,
