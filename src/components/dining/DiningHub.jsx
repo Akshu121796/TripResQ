@@ -450,9 +450,9 @@ export default function DiningHub({
                 const imgMeta = selectedRestaurant.resolvedImage || getRestaurantImage(selectedRestaurant);
                 const isFallback = imgMeta.isFallback;
                 const modalPhotoUrl = imgMeta.url;
-                const modalAttribution = isFallback
-                  ? 'Representative image'
-                  : (imgMeta.source === 'wikimedia' ? 'Wikimedia Commons' : 'OpenStreetMap');
+                const modalAttribution = !isFallback && imgMeta.source
+                  ? (imgMeta.source === 'wikimedia' ? 'Wikimedia Commons' : 'OpenStreetMap')
+                  : null;
 
                 return (
                   <div className="h-44 sm:h-48 w-full rounded-xl overflow-hidden mb-4 relative bg-slate-100 flex items-center justify-center border border-slate-200/80">
@@ -467,11 +467,11 @@ export default function DiningHub({
                       }}
                       className="w-full h-full object-cover"
                     />
-                    <span className={`absolute bottom-2 left-2 px-2.5 py-1 rounded backdrop-blur-xs text-[10px] font-medium ${
-                      isFallback ? 'bg-slate-900/60 text-slate-200' : 'bg-black/70 text-white font-mono'
-                    }`}>
-                      {modalAttribution}
-                    </span>
+                    {modalAttribution && (
+                      <span className="absolute bottom-2 left-2 px-2.5 py-1 rounded bg-black/70 text-white font-mono text-[10px] font-medium">
+                        {modalAttribution}
+                      </span>
+                    )}
                   </div>
                 );
               })()}

@@ -41,9 +41,10 @@ export default function RestaurantCard({
   } = restaurant;
 
   const handleImageError = () => {
-    if (!isFallbackActive) {
+    if (currentImgSrc !== imageMeta.fallbackUrl && imageMeta.fallbackUrl) {
       setCurrentImgSrc(imageMeta.fallbackUrl);
-      setIsFallbackActive(true);
+    } else if (currentImgSrc !== '/dining/restaurant.jpg') {
+      setCurrentImgSrc('/dining/restaurant.jpg');
     }
   };
 
@@ -97,33 +98,21 @@ export default function RestaurantCard({
       id={`restaurant-card-${restaurant.id}`}
     >
       <div>
-        {/* Visual Media Header with 100% Free Hybrid Image & Error Fallback */}
+        {/* Visual Media Header */}
         <div className="h-44 sm:h-48 w-full relative overflow-hidden bg-slate-100 flex items-center justify-center">
-          {!imageLoaded && (
-            <div className="absolute inset-0 bg-slate-100 animate-pulse flex items-center justify-center">
-              <ImageIcon className="w-6 h-6 text-slate-300" />
-            </div>
-          )}
-
           <img
             src={currentImgSrc}
             alt={name}
-            loading="lazy"
+            loading="eager"
             onLoad={() => setImageLoaded(true)}
             onError={handleImageError}
-            className={`w-full h-full object-cover group-hover:scale-105 transition duration-500 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+            className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
           />
 
-          {/* Overlaid Source Attribution Badge */}
+          {/* Overlaid Source Attribution Badge (only when real OSM or Wikimedia source) */}
           {!isFallbackActive && imageMeta.source && (
             <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/60 backdrop-blur-xs text-white text-[9px] font-mono font-medium">
               {imageMeta.source === 'wikimedia' ? 'Wikimedia Commons' : 'OpenStreetMap'}
-            </span>
-          )}
-
-          {isFallbackActive && (
-            <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-slate-900/60 backdrop-blur-xs text-slate-200 text-[9px] font-medium tracking-wide">
-              Representative image
             </span>
           )}
 
