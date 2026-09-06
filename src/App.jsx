@@ -1210,6 +1210,10 @@ function App() {
   const [disruptDelay, setDisruptDelay] = useState(180);
   const [disruptReason, setDisruptReason] = useState('Severe Weather & Thunderstorms');
 
+  // Disruption Simulation States
+  const [isDisrupting, setIsDisrupting] = useState(false);
+  const [disruptionError, setDisruptionError] = useState(null);
+
   // Cascade Impact Metrics
   const [impactMetrics, setImpactMetrics] = useState({
     delayMinutes: 0,
@@ -1495,13 +1499,15 @@ function App() {
   const triggerDisruptionCascade = async (nodeId, type, delayMins, reason) => {
     const targetId = nodeId || selectedDisruptNode || (currentTrip.length > 0 ? currentTrip[0].id : '');
     if (!targetId) {
-      alert("Please select a travel node to disrupt!");
+      setDisruptionError("Please select a travel node to disrupt!");
       return;
     }
     if (!tripRefNum) {
-      alert("Trip not loaded yet. Please wait for the trip to initialize.");
+      setDisruptionError("Trip not loaded yet. Please wait for the trip to initialize.");
       return;
     }
+    setIsDisrupting(true);
+    setDisruptionError(null);
     try {
       const delayToApply = (type === 'cancel' || type === 'lockout') ? 360 : (delayMins || 180);
       console.log(`[TripResQ] Disrupting node=${targetId} trip=${tripRefNum} type=${type} delay=${delayToApply}`);
@@ -1518,7 +1524,7 @@ function App() {
       const data = await res.json();
       console.log('[TripResQ] Disruption response:', { metrics: data.metrics, graphNodes: data.updated_graph?.nodes?.length });
       if (data.error) {
-         alert(`Disruption Error: ${data.error}`);
+         setDisruptionError(`Disruption Error: ${data.error}`);
          return;
       }
       
@@ -1544,8 +1550,19 @@ function App() {
       });
     } catch (err) {
       console.error('[TripResQ] Disruption error:', err);
-      alert('Failed to execute disruption simulation. Ensure the Flask backend is running at http://localhost:5000.');
+      setDisruptionError('Failed to execute disruption simulation. Ensure the Flask backend is running at http://localhost:5000.');
+    } finally {
+      setIsDisrupting(false);
     }
+  };
+
+  const handleResetDemo = () => {
+    setCurrentTrip([]);
+    setDisruptionState('healthy');
+    setRecoveryResult(null);
+    setImpactMetrics({ delayMinutes: 0, brokenConnections: 0, affectedNodes: 0 });
+    setDisruptionError(null);
+    initializeSeedTrip();
   };
 
   
@@ -1811,6 +1828,15 @@ function App() {
 
         {/* Right Controls */}
         <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
+          {/* Reset Demo Button */}
+          <button
+            onClick={handleResetDemo}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] sm:text-xs font-bold rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900 transition duration-200 cursor-pointer"
+            aria-label="Reset Demo"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Reset Demo
+          </button>
+
           {/* Chaos Sandbox badge - Gated by Login */}
           {userAuth.loggedIn && (
             <button 
@@ -3005,40 +3031,55 @@ function App() {
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-slate-105">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerDisruptionCascade(selectedDisruptNode, disruptType, disruptDelay, disruptReason);
-                      }}
-                      className="flex-1 px-6 h-11 bg-[#FF7700] hover:bg-[#E06600] text-white font-extrabold rounded-xl transition shadow-md shadow-[#FF7700]/10 active:scale-98 flex items-center justify-center gap-2 cursor-pointer text-xs"
-                    >
-                      <Flame className="w-4 h-4" /> {t('triggerBtn')}
-                    </button>
+                  <div className="flex flex-col gap-3 pt-4 border-t border-slate-105">
+                    {/* Disruption Error State */}
+                    {disruptionError && (
+                      <div className="w-full p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        <p className="text-xs font-medium">{disruptionError}</p>
+                      </div>
+                    )}
 
-                    <button
-                      type="button"
-                      onClick={() => setCurrentPage('rescue')}
-                      className="px-4 h-11 border border-blue-200 bg-blue-50 hover:bg-blue-100 text-[#287DFA] font-bold rounded-xl transition cursor-pointer text-xs flex items-center justify-center gap-1.5"
-                    >
-                      <span>🎛️ Recovery Control →</span>
-                    </button>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <button
+                        type="button"
+                        disabled={isDisrupting || !selectedDisruptNode}
+                        onClick={() => {
+                          triggerDisruptionCascade(selectedDisruptNode, disruptType, disruptDelay, disruptReason);
+                        }}
+                        className="flex-1 px-6 h-11 bg-[#FF7700] hover:bg-[#E06600] text-white font-extrabold rounded-xl transition shadow-md shadow-[#FF7700]/10 active:scale-98 flex items-center justify-center gap-2 cursor-pointer text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isDisrupting ? (
+                          <><RefreshCw className="w-4 h-4 animate-spin" /> Simulating...</>
+                        ) : (
+                          <><Flame className="w-4 h-4" /> {t('triggerBtn')}</>
+                        )}
+                      </button>
 
-                    <button
-                      type="button"
-                      onClick={() => setCurrentPage('my-trip')}
-                      className="px-4 h-11 border border-orange-200 bg-orange-50 hover:bg-orange-100 text-orange-800 font-bold rounded-xl transition cursor-pointer text-xs flex items-center justify-center gap-1.5"
-                    >
-                      <span>{t('navMyTrips')} →</span>
-                    </button>
-                    
-                    <button
-                      type="button"
-                      onClick={handleResetJourney}
-                      className="px-6 h-11 border border-slate-350 bg-white hover:bg-slate-50 text-slate-700 font-bold rounded-xl transition cursor-pointer text-xs"
-                    >
-                      {t('resetBtn')}
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => setCurrentPage('rescue')}
+                        className="px-4 h-11 border border-blue-200 bg-blue-50 hover:bg-blue-100 text-[#287DFA] font-bold rounded-xl transition cursor-pointer text-xs flex items-center justify-center gap-1.5"
+                      >
+                        <span>🎛️ Recovery Control →</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setCurrentPage('my-trip')}
+                        className="px-4 h-11 border border-orange-200 bg-orange-50 hover:bg-orange-100 text-orange-800 font-bold rounded-xl transition cursor-pointer text-xs flex items-center justify-center gap-1.5"
+                      >
+                        <span>{t('navMyTrips')} →</span>
+                      </button>
+                      
+                      <button
+                        type="button"
+                        onClick={handleResetJourney}
+                        className="px-6 h-11 border border-slate-350 bg-white hover:bg-slate-50 text-slate-700 font-bold rounded-xl transition cursor-pointer text-xs"
+                      >
+                        {t('resetBtn')}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
