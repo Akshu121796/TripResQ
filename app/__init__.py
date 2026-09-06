@@ -16,8 +16,26 @@ RISK_REFRESH_INTERVAL_SECONDS = 45
 def create_app(test_config=None):
     app = Flask(__name__)
     
-    # Enable CORS for React Dev Server (Person B)
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    # Configure CORS safely for deployed Vercel frontend and local development
+    allowed_origins = [
+        "https://trip-res-q.vercel.app",
+        r"^https:\/\/trip-res-q.*\.vercel\.app$",
+        r"^http:\/\/localhost:\d+$",
+        r"^http:\/\/127\.0\.0\.1:\d+$",
+    ]
+    cors_env = os.environ.get("CORS_ORIGINS")
+    if cors_env:
+        for o in cors_env.split(","):
+            if o.strip():
+                allowed_origins.append(o.strip())
+
+    CORS(
+        app,
+        resources={r"/api/*": {"origins": allowed_origins}},
+        supports_credentials=True,
+        allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
+    )
     
     # Initialize Swagger API Documentation
     swagger_config = {
@@ -59,6 +77,13 @@ def create_app(test_config=None):
     with app.app_context():
         from app import models
         db.create_all()
+        if not app.config.get("TESTING"):
+            try:
+                from app.mock_data.seed import demo_trip_exists, seed_demo_trip
+                if not demo_trip_exists():
+                    seed_demo_trip(force=False)
+            except Exception as e:
+                app.logger.warning(f"Initial demo trip seeding skipped: {e}")
         
     from app.routers.trips import trips_bp
     from app.routers.nodes import nodes_bp

@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import RiskBanner from './RiskBanner';
 import RiskConnectionCard from './RiskConnectionCard';
-
-const DEFAULT_API_BASE = 'http://localhost:5000/api';
+import { apiFetch } from '../../services/api';
 
 /**
  * Self-contained, isolated Risk Radar feature module.
@@ -12,13 +11,11 @@ const DEFAULT_API_BASE = 'http://localhost:5000/api';
  *
  * Props:
  *   - tripId (string, required): ID of the trip to monitor.
- *   - apiBase (string, optional): Base URL for API endpoints. Defaults to http://localhost:5000/api.
  *   - onPlanApplied (function, optional): Callback invoked when a buffer plan is successfully applied.
  *   - pollIntervalMs (number, optional): Polling interval in ms. Defaults to 25000 (25s).
  */
 export default function RiskRadar({
   tripId,
-  apiBase = DEFAULT_API_BASE,
   onPlanApplied,
   pollIntervalMs = 25000,
   className = ''
@@ -46,8 +43,9 @@ export default function RiskRadar({
     if (!tripId) return;
     try {
       if (force) setLoading(true);
-      const url = `${apiBase}/trips/${tripId}/risk-radar${force ? '?refresh=true' : ''}`;
-      const res = await fetch(url);
+      const endpoint = `/trips/${tripId}/risk-radar${force ? '?refresh=true' : ''}`;
+      const res = await apiFetch(endpoint);
+
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (isMountedRef.current) {
@@ -64,7 +62,7 @@ export default function RiskRadar({
         setLoading(false);
       }
     }
-  }, [tripId, apiBase]);
+  }, [tripId]);
 
   // Initial load and periodic background polling
   useEffect(() => {
@@ -83,9 +81,9 @@ export default function RiskRadar({
     if (!tripId || !edgeId) return;
     try {
       setPlanLoadingId(edgeId);
-      const res = await fetch(`${apiBase}/trips/${tripId}/connections/${edgeId}/buffer-plan`, {
-        method: 'POST',
-      });
+      const endpoint = `/trips/${tripId}/connections/${edgeId}/buffer-plan`;
+      const res = await apiFetch(endpoint, { method: 'POST' });
+
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const plan = await res.json();
       if (isMountedRef.current) {
@@ -105,9 +103,9 @@ export default function RiskRadar({
     if (!tripId || !edgeId) return;
     try {
       setApplyingId(edgeId);
-      const res = await fetch(`${apiBase}/trips/${tripId}/connections/${edgeId}/buffer-plan/apply`, {
-        method: 'POST',
-      });
+      const endpoint = `/trips/${tripId}/connections/${edgeId}/buffer-plan/apply`;
+      const res = await apiFetch(endpoint, { method: 'POST' });
+
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const applyResult = await res.json();
 

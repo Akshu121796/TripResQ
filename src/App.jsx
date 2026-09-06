@@ -33,6 +33,7 @@ import { RecoveryControl } from './components/recovery';
 import { RiskRadar } from './components/risk';
 import { DiningHub } from './components/dining';
 import OnboardingGuide from './components/OnboardingGuide';
+import { apiFetch } from './services/api';
 
 // --- i18n Translation Dictionary ---
 const TRANSLATIONS = {
@@ -1202,7 +1203,14 @@ function App() {
   const [originalTripNodes, setOriginalTripNodes] = useState([]);
   const [recoveryResult, setRecoveryResult] = useState(null);
   const [riskRadar, setRiskRadar] = useState(null);
-  const [recentTrips, setRecentTrips] = useState([]);
+  const [recentTrips, setRecentTrips] = useState(() => {
+    try {
+      const saved = localStorage.getItem('tripresq_recent_trips');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
 
   // Chaos Lab Disruption Inputs
   const [selectedDisruptNode, setSelectedDisruptNode] = useState('');
@@ -1259,13 +1267,21 @@ function App() {
   };
 
   
-  // Fetch recent trips from backend
+  // Fetch recent trips from centralized backend and keep cached in localStorage
   const fetchRecentTrips = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/trips');
+      const res = await apiFetch('/trips');
       if (res.ok) {
         const data = await res.json();
-        setRecentTrips(data.slice(0, 6));
+        if (Array.isArray(data)) {
+          const tripsList = data.slice(0, 6);
+          setRecentTrips(tripsList);
+          try {
+            localStorage.setItem('tripresq_recent_trips', JSON.stringify(tripsList));
+          } catch (e) {
+            // ignore storage failure
+          }
+        }
       }
     } catch (err) {
       console.error('Error fetching recent trips:', err);
@@ -1275,7 +1291,7 @@ function App() {
   // Fetch risk radar data for current trip
   const fetchRiskRadar = async (tripId) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/trips/${tripId}/risk-radar`);
+      const res = await apiFetch(`/trips/${tripId}/risk-radar`);
       if (res.ok) {
         const data = await res.json();
         setRiskRadar(data);
@@ -1287,30 +1303,27 @@ function App() {
 
   const initializeSeedTrip = async () => {
     try {
-      // Call backend seed-demo endpoint — this creates the trip, nodes, edges,
-      // and cohort in the SQLite database through the existing models.
-      const res = await fetch('http://localhost:5000/api/seed-demo', {
+      // Call backend seed-demo endpoint — creates trip, nodes, edges, cohort in backend DB
+      const res = await apiFetch('/seed-demo', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ force: false })
       });
-      const seedData = await res.json();
-      const tripId = seedData.trip_id;
-      const graphData = seedData.graph;
+      if (res.ok) {
+        const seedData = await res.json();
+        const tripId = seedData.trip_id;
+        const graphData = seedData.graph;
 
-      const formattedNodes = formatGraphNodes(graphData.nodes);
+        const formattedNodes = formatGraphNodes(graphData?.nodes || []);
 
-      setCurrentTrip(formattedNodes);
-      setOriginalTripNodes(formattedNodes);
-      if (formattedNodes.length > 0) {
-        setSelectedDisruptNode(formattedNodes[0].id);
+        if (formattedNodes.length > 0) {
+          setCurrentTrip(formattedNodes);
+          setOriginalTripNodes(formattedNodes);
+          setSelectedDisruptNode(formattedNodes[0].id);
+          setTripRefNum(tripId);
+          fetchRiskRadar(tripId);
+          fetchRecentTrips();
+        }
       }
-      setTripRefNum(tripId);
-
-      // Fetch risk radar for the seeded trip
-      fetchRiskRadar(tripId);
-      // Fetch recent trips list
-      fetchRecentTrips();
     } catch (err) {
       console.error('Error seeding trip:', err);
     }
@@ -1435,11 +1448,12 @@ function App() {
   const handleLockJourney = async () => {
     if (builderNodes.length === 0) return;
     try {
-      const res = await fetch('http://localhost:5000/api/trips', {
+      const res = await apiFetch('/trips', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'Trip Journey' })
       });
+      if (!res.ok) throw new Error('Failed to create trip');
       const tripData = await res.json();
       const tripId = tripData.id;
 
@@ -1467,14 +1481,15 @@ function App() {
           payload.hard_cutoff = hardCutoff;
         }
 
-        await fetch('http://localhost:5000/api/nodes', {
+        await apiFetch('/nodes', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
       }
 
-      const graphRes = await fetch(`http://localhost:5000/api/trips/${tripId}/graph`);
+      const graphRes = await apiFetch(`/trips/${tripId}/graph`);
+      if (!graphRes.ok) throw new Error('Failed to load trip graph');
       const graphData = await graphRes.json();
       
       const formattedNodes = formatGraphNodes(graphData.nodes);
@@ -1489,9 +1504,11 @@ function App() {
       setDisruptionState('healthy');
       setImpactMetrics({ delayMinutes: 0, brokenConnections: 0, affectedNodes: 0 });
       setCurrentPage('my-trip');
+      fetchRiskRadar(tripId);
+      fetchRecentTrips();
     } catch (err) {
       console.error(err);
-      alert('Failed to lock journey with backend');
+      alert('Failed to lock journey with backend. Please ensure backend is reachable.');
     }
   };
 
@@ -1511,7 +1528,7 @@ function App() {
     try {
       const delayToApply = (type === 'cancel' || type === 'lockout') ? 360 : (delayMins || 180);
       console.log(`[TripResQ] Disrupting node=${targetId} trip=${tripRefNum} type=${type} delay=${delayToApply}`);
-      const res = await fetch(`http://localhost:5000/api/trips/${tripRefNum}/disrupt`, {
+      const res = await apiFetch(`/trips/${tripRefNum}/disrupt`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1550,7 +1567,7 @@ function App() {
       });
     } catch (err) {
       console.error('[TripResQ] Disruption error:', err);
-      setDisruptionError('Failed to execute disruption simulation. Ensure the Flask backend is running at http://localhost:5000.');
+      setDisruptionError('Failed to execute disruption simulation. Ensure the backend is reachable.');
     } finally {
       setIsDisrupting(false);
     }
@@ -1572,7 +1589,7 @@ function App() {
     try {
       // Re-seed the demo trip using the backend endpoint
       // force: true deletes and re-creates the demo trip cleanly
-      const res = await fetch('http://localhost:5000/api/seed-demo', {
+      const res = await apiFetch('/seed-demo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ force: true })
@@ -2299,7 +2316,7 @@ function App() {
                           type="button"
                           onClick={async () => {
                             try {
-                              const graphRes = await fetch(`http://localhost:5000/api/trips/${trip.id}/graph`);
+                              const graphRes = await apiFetch(`/trips/${trip.id}/graph`);
                               if (!graphRes.ok) return;
                               const graphData = await graphRes.json();
                               const formattedNodes = formatGraphNodes(graphData.nodes);
@@ -2903,7 +2920,7 @@ function App() {
                       <div className="p-6 rounded-xl border border-slate-200 bg-slate-50 text-center">
                         <Clock className="w-5 h-5 text-[#287DFA] animate-spin mx-auto mb-2" />
                         <p className="text-xs text-slate-500 font-semibold">Loading trip nodes from backend...</p>
-                        <p className="text-[10px] text-slate-400 mt-1">Ensure Flask backend is running at http://localhost:5000</p>
+                        <p className="text-[10px] text-slate-400 mt-1">Connecting to TripResQ backend...</p>
                       </div>
                     ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

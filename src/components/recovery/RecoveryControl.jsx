@@ -12,8 +12,7 @@ import RecoveryPlanCard from './RecoveryPlanCard';
 import RecoveryPlanComparison from './RecoveryPlanComparison';
 import FamilyFractureRescue from './FamilyFractureRescue';
 import './recovery.css';
-
-const API_BASE = 'http://localhost:5000/api';
+import { apiFetch } from '../../services/api';
 
 export default function RecoveryControl({
   tripId,
@@ -47,7 +46,7 @@ export default function RecoveryControl({
 
     try {
       // Primary Person 2 recovery-options endpoint
-      let res = await fetch(`${API_BASE}/trips/${tripId}/recovery-options`, {
+      let res = await apiFetch(`/trips/${tripId}/recovery-options`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ priority: prio, include_simulated_split: true })
@@ -55,14 +54,14 @@ export default function RecoveryControl({
 
       // Resilient fallback to /recovery or /recover if needed
       if (!res.ok) {
-        res = await fetch(`${API_BASE}/trips/${tripId}/recovery`, {
+        res = await apiFetch(`/trips/${tripId}/recovery`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ priority: prio })
         });
       }
       if (!res.ok) {
-        res = await fetch(`${API_BASE}/trips/${tripId}/recover`, {
+        res = await apiFetch(`/trips/${tripId}/recover`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ priority: prio })
@@ -115,7 +114,7 @@ export default function RecoveryControl({
 
     try {
       // 1. Seed demo cohort in backend for this trip
-      const cohortRes = await fetch(`${API_BASE}/trips/${tripId}/cohort/demo`, {
+      const cohortRes = await apiFetch(`/trips/${tripId}/cohort/demo`, {
         method: 'POST'
       });
       if (!cohortRes.ok) {
@@ -125,14 +124,14 @@ export default function RecoveryControl({
       setCohortData(cohortJson);
 
       // 2. Fetch deterministic fracture simulation data directly from backend
-      const simRes = await fetch(`${API_BASE}/trips/${tripId}/cohort/fracture-simulation`);
+      const simRes = await apiFetch(`/trips/${tripId}/cohort/fracture-simulation`);
       if (simRes.ok) {
         const simJson = await simRes.json();
         setSimulationData(simJson);
       }
 
       // 3. Fetch recovery options including simulated split
-      const recRes = await fetch(`${API_BASE}/trips/${tripId}/recovery-options`, {
+      const recRes = await apiFetch(`/trips/${tripId}/recovery-options`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ priority, include_simulated_split: true })
@@ -171,7 +170,7 @@ export default function RecoveryControl({
     setIsApplying(true);
     try {
       // Call backend with selected plan's proposals and plan metadata
-      const res = await fetch(`${API_BASE}/trips/${tripId}/apply-plan`, {
+      const res = await apiFetch(`/trips/${tripId}/apply-plan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -408,7 +407,7 @@ export default function RecoveryControl({
                 <div>
                   <h4 className="font-bold text-sm font-serif">{errorMessage}</h4>
                   <p className="text-xs text-red-500 mt-0.5">
-                    Ensure the backend is running at http://localhost:5000.
+                    Ensure the backend is running and reachable.
                   </p>
                 </div>
               </div>

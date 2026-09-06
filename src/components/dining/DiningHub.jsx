@@ -8,20 +8,76 @@ import DiningResults from './DiningResults';
 import { searchLocation, getUserLocation } from '../../services/locationService';
 import { getNearbyRestaurants, getCuratedFallbackRestaurants } from '../../services/restaurantService';
 import { getRestaurantImage } from '../../services/restaurantImageService';
+import { getFallbackRestaurants } from '../../services/fallbackRestaurants';
+import { apiFetch } from '../../services/api';
 
-const BACKEND_BASE = import.meta.env?.VITE_API_BASE_URL || import.meta.env?.VITE_BACKEND_URL || (typeof window !== 'undefined' && window.location.hostname === 'localhost' ? 'http://localhost:5000' : '');
+const BACKEND_BASE =
+  import.meta.env?.VITE_API_BASE_URL ||
+  import.meta.env?.VITE_BACKEND_URL ||
+  (typeof window !== 'undefined' &&
+    window.location.hostname === 'localhost'
+    ? 'http://localhost:5000'
+    : '');
 
 function getInstantCoordsForQuery(query = '', fallbackName = 'Mumbai Airport') {
   const q = (query || '').toLowerCase();
-  if (q.includes('mumbai') || q.includes('bom')) return { lat: 19.0896, lng: 72.8656, name: fallbackName || 'Mumbai Airport', displayName: 'Chhatrapati Shivaji Maharaj International Airport, Mumbai' };
-  if (q.includes('goa') || q.includes('dabolim') || q.includes('aguada')) return { lat: 15.4925, lng: 73.7736, name: fallbackName || 'Taj Fort Aguada, Goa', displayName: 'Taj Fort Aguada, Sinquerim, Goa' };
-  if (q.includes('delhi') || q.includes('del') || q.includes('igi')) return { lat: 28.5562, lng: 77.1000, name: fallbackName || 'Delhi Airport', displayName: 'Indira Gandhi International Airport, New Delhi' };
-  if (q.includes('pune') || q.includes('pnq')) return { lat: 18.5284, lng: 73.8743, name: fallbackName || 'Pune Railway Station', displayName: 'Pune Railway Station, Pune' };
-  if (q.includes('bangalore') || q.includes('bengaluru') || q.includes('blr')) return { lat: 12.9716, lng: 77.5946, name: fallbackName || 'Bangalore', displayName: 'Bangalore, Karnataka, India' };
-  if (q.includes('jaipur') || q.includes('jai')) return { lat: 26.9124, lng: 75.7873, name: fallbackName || 'Jaipur', displayName: 'Jaipur, Rajasthan, India' };
-  return { lat: 19.0896, lng: 72.8656, name: fallbackName || 'Mumbai Airport', displayName: 'Mumbai Airport' };
-}
 
+  if (q.includes('mumbai') || q.includes('bom'))
+    return {
+      lat: 19.0896,
+      lng: 72.8656,
+      name: fallbackName || 'Mumbai Airport',
+      displayName:
+        'Chhatrapati Shivaji Maharaj International Airport, Mumbai',
+    };
+
+  if (q.includes('goa') || q.includes('dabolim') || q.includes('aguada'))
+    return {
+      lat: 15.4925,
+      lng: 73.7736,
+      name: fallbackName || 'Taj Fort Aguada, Goa',
+      displayName: 'Taj Fort Aguada, Sinquerim, Goa',
+    };
+
+  if (q.includes('delhi') || q.includes('del') || q.includes('igi'))
+    return {
+      lat: 28.5562,
+      lng: 77.1,
+      name: fallbackName || 'Delhi Airport',
+      displayName: 'Indira Gandhi International Airport, New Delhi',
+    };
+
+  if (q.includes('pune') || q.includes('pnq'))
+    return {
+      lat: 18.5284,
+      lng: 73.8743,
+      name: fallbackName || 'Pune Railway Station',
+      displayName: 'Pune Railway Station, Pune',
+    };
+
+  if (q.includes('bangalore') || q.includes('bengaluru') || q.includes('blr'))
+    return {
+      lat: 12.9716,
+      lng: 77.5946,
+      name: fallbackName || 'Bangalore',
+      displayName: 'Bangalore, Karnataka, India',
+    };
+
+  if (q.includes('jaipur') || q.includes('jai'))
+    return {
+      lat: 26.9124,
+      lng: 75.7873,
+      name: fallbackName || 'Jaipur',
+      displayName: 'Jaipur, Rajasthan, India',
+    };
+
+  return {
+    lat: 19.0896,
+    lng: 72.8656,
+    name: fallbackName || 'Mumbai Airport',
+    displayName: 'Mumbai Airport',
+  };
+}
 function deriveNextStopFromNodes(nodes, destinationFallback) {
   const dest = destinationFallback || 'Goa';
   if (!nodes || nodes.length === 0) {
@@ -130,6 +186,7 @@ export default function DiningHub({
 
   const effectiveTripId = tripId || tripRef || 'TR-998827';
 
+<<<<<<< HEAD
   // 1. Fetch next stop from backend API (graceful background check, never crashes demo)
   const fetchNextStop = useCallback(async () => {
     const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
@@ -149,6 +206,29 @@ export default function DiningHub({
           signal: controller.signal
         });
         clearTimeout(timeoutId);
+=======
+  // Update fallback dataset whenever activeDestination prop changes in demo mode
+  useEffect(() => {
+    if (activeMode === 'next_stop') {
+      const city = activeDestination || 'Pune';
+      setRawRestaurants(getFallbackRestaurants(city));
+      setResolvedLocationName(`${city} Railway Station`);
+      setNextStopData(deriveNextStopFromNodes(currentTripNodes, city));
+    }
+  }, [activeDestination, activeMode, currentTripNodes]);
+
+  // 1. Fetch next stop from centralized backend API (graceful, never crashes demo)
+  const fetchNextStop = useCallback(async () => {
+    setIsLoadingNextStop(true);
+    setLocationError(null);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+      const resp = await apiFetch(`/trips/${effectiveTripId}/next-stop`, {
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+>>>>>>> 279cb9f (centralized backend with api)
 
         if (resp.ok) {
           const data = await resp.json();
@@ -160,7 +240,7 @@ export default function DiningHub({
       setNextStopData(fallbackStop);
       return fallbackStop;
     } catch (err) {
-      console.warn('[dining] Next-stop backend check skipped, using demo stop:', err);
+      console.warn('[dining] Next-stop backend check skipped or unavailable, using demo stop:', err);
       const fallbackStop = deriveNextStopFromNodes(currentTripNodes, activeDestination);
       setNextStopData(fallbackStop);
       return fallbackStop;
@@ -247,7 +327,7 @@ export default function DiningHub({
 
   // Initial load: Background check for next stop if backend is reachable (never blocks UI)
   useEffect(() => {
-    fetchNextStop().catch(() => {});
+    fetchNextStop().catch(() => { });
   }, [fetchNextStop]);
 
   // 3. Real Nearby Restaurant Query via OpenStreetMap Overpass
@@ -467,26 +547,37 @@ export default function DiningHub({
                       }}
                       className="w-full h-full object-cover"
                     />
-                    {modalAttribution && (
-                      <span className="absolute bottom-2 left-2 px-2.5 py-1 rounded bg-black/70 text-white font-mono text-[10px] font-medium">
-                        {modalAttribution}
-                      </span>
-                    )}
-                  </div>
+<<<<<<< HEAD
+  {
+    modalAttribution && (
+      <span className="absolute bottom-2 left-2 px-2.5 py-1 rounded bg-black/70 text-white font-mono text-[10px] font-medium">
+        {modalAttribution}
+      </span>
+    )
+  }
+=======
+                    <span className={`absolute bottom-2 left-2 px-2.5 py-1 rounded backdrop-blur-xs text-[10px] font-medium ${isFallback ? 'bg-slate-900/60 text-slate-200' : 'bg-black/70 text-white font-mono'
+                      }`}>
+                      {modalAttribution}
+                    </span>
+>>>>>>> 279cb9f (centralized backend with api)
+                  </div >
                 );
-              })()}
+}) ()}
 
-              <h3 className="text-xl font-extrabold text-slate-900 font-serif mb-1">
-                {selectedRestaurant.name}
-              </h3>
-              {selectedRestaurant.address && (
-                <p className="text-xs text-slate-500 mb-4 flex items-start gap-1">
-                  <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-                  <span>{selectedRestaurant.address}</span>
-                </p>
-              )}
+<h3 className="text-xl font-extrabold text-slate-900 font-serif mb-1">
+  {selectedRestaurant.name}
+</h3>
+{
+  selectedRestaurant.address && (
+    <p className="text-xs text-slate-500 mb-4 flex items-start gap-1">
+      <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+      <span>{selectedRestaurant.address}</span>
+    </p>
+  )
+}
 
-              {/* Verified OSM Details Table */}
+{/* Verified OSM Details Table */ }
               <div className="space-y-3 mb-6">
                 <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-2">
                   <div className="flex justify-between">
@@ -600,10 +691,10 @@ export default function DiningHub({
               >
                 Close
               </button>
-            </motion.div>
-          </div>
+            </motion.div >
+          </div >
         )}
-      </AnimatePresence>
-    </div>
+      </AnimatePresence >
+    </div >
   );
 }
