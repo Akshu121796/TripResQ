@@ -282,6 +282,22 @@ export function getRestaurantImage(restaurant = {}, occurrenceIndex) {
 
   const fallbackUrl = getCuisineFallbackImage(cuisineCategory, fallbackSeed);
 
+  // 0. Explicit local image asset (e.g., bundled fallback dataset with /dining/ paths)
+  const explicitImage = restaurant.imageUrl || restaurant.image;
+  if (explicitImage && typeof explicitImage === 'string') {
+    const trimmed = explicitImage.trim();
+    if (trimmed.startsWith('/')) {
+      return {
+        url: trimmed,
+        source: 'local',
+        isFallback: true,
+        attribution: restaurant.imageAttribution || 'TripResQ Curated',
+        cuisineCategory,
+        fallbackUrl: trimmed
+      };
+    }
+  }
+
   // 1. First priority: OSM direct `image` tag
   const rawImage = restaurant.rawImage || restaurant.image;
   if (rawImage && typeof rawImage === 'string') {

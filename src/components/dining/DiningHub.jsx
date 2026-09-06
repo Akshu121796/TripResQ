@@ -8,14 +8,66 @@ import DiningResults from './DiningResults';
 import { searchLocation, getUserLocation } from '../../services/locationService';
 import { getNearbyRestaurants } from '../../services/restaurantService';
 import { getRestaurantImage } from '../../services/restaurantImageService';
+import { getFallbackRestaurants } from '../../services/fallbackRestaurants';
 
-const BACKEND_BASE = 'http://localhost:5000';
+const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+
+/**
+ * Synthesizes a realistic next stop from trip nodes or destination fallback.
+ */
+function deriveNextStopFromNodes(nodes, destinationFallback) {
+  const dest = destinationFallback || 'Pune';
+  if (!nodes || nodes.length === 0) {
+    return {
+      available: true,
+      node_id: 'demo-next-stop-001',
+      node_type: 'TRAIN',
+      name: `${dest} Railway Station`,
+      location: `${dest} Railway Station`,
+      destination: dest,
+      arrival_time: '19:35',
+      latitude: 18.5204,
+      longitude: 73.8567
+    };
+  }
+
+  const trainOrFlight = nodes.find(n => (n.type || '').toLowerCase() === 'train' || (n.type || '').toLowerCase() === 'flight');
+  if (trainOrFlight) {
+    const typeUpper = (trainOrFlight.type || '').toUpperCase();
+    let stopName = `${dest} Railway Station`;
+    if (typeUpper === 'FLIGHT') stopName = `${dest} Airport`;
+
+    return {
+      available: true,
+      node_id: trainOrFlight.id,
+      node_type: typeUpper,
+      name: stopName,
+      location: stopName,
+      destination: dest,
+      arrival_time: trainOrFlight.scheduledEnd || trainOrFlight.actualEnd || '19:35',
+      latitude: 18.5204,
+      longitude: 73.8567
+    };
+  }
+
+  return {
+    available: true,
+    node_id: nodes[0].id,
+    node_type: (nodes[0].type || 'ACTIVITY').toUpperCase(),
+    name: nodes[0].title || `${dest} Destination`,
+    location: nodes[0].title || `${dest} Destination`,
+    destination: dest,
+    arrival_time: nodes[0].scheduledStart || '19:35',
+    latitude: 18.5204,
+    longitude: 73.8567
+  };
+}
 
 /**
  * DiningHub: Travel-Aware Real Nearby Restaurant Discovery
  *
- * Implements 3 location modes using real OpenStreetMap Overpass & Nominatim services,
- * client-side 9-card pagination, and rich OSM metadata displays.
+ * Implements instant zero-latency demo rendering with bundled deterministic datasets,
+ * graceful offline/production fallback, and live OpenStreetMap Overpass search when requested.
  */
 export default function DiningHub({
   tripId,
@@ -23,17 +75,24 @@ export default function DiningHub({
   currentTripNodes = [],
   activeDestination = 'Pune'
 }) {
+  const initialCity = activeDestination || 'Pune';
+
   // Mode: 'next_stop' | 'current_loc' | 'search'
   const [activeMode, setActiveMode] = useState('next_stop');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Next stop data from backend
-  const [nextStopData, setNextStopData] = useState(null);
+  // Next stop data initialized synchronously so there is zero flash of skeleton/loading state
+  const [nextStopData, setNextStopData] = useState(() => deriveNextStopFromNodes(currentTripNodes, activeDestination));
   const [isLoadingNextStop, setIsLoadingNextStop] = useState(false);
 
-  // Active resolved coordinate & location context
-  const [currentCoords, setCurrentCoords] = useState(null); // { lat, lng, displayName, name }
-  const [resolvedLocationName, setResolvedLocationName] = useState('Pune Railway Station');
+  // Active resolved coordinate & location context initialized immediately
+  const [currentCoords, setCurrentCoords] = useState({
+    lat: 18.5204,
+    lng: 73.8567,
+    displayName: `${initialCity}, India`,
+    name: `${initialCity} Railway Station`
+  });
+  const [resolvedLocationName, setResolvedLocationName] = useState(`${initialCity} Railway Station`);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [locationError, setLocationError] = useState(null);
 
@@ -44,19 +103,43 @@ export default function DiningHub({
   // Pagination state (0-indexed page)
   const [currentPage, setCurrentPage] = useState(0);
 
-  // Results & UI
-  const [rawRestaurants, setRawRestaurants] = useState([]);
+  // Results & UI: Pre-seed with 6 rich cards immediately (0ms delay, no network risk)
+  const [rawRestaurants, setRawRestaurants] = useState(() => getFallbackRestaurants(initialCity));
   const [isLoadingRestaurants, setIsLoadingRestaurants] = useState(false);
   const [selectedRestaurant, setSelectedRestaurant] = useState(null);
 
   const effectiveTripId = tripId || tripRef || 'TR-998827';
 
-  // 1. Fetch next stop from backend API
+  // Update fallback dataset whenever activeDestination prop changes in demo mode
+  useEffect(() => {
+    if (activeMode === 'next_stop') {
+      const city = activeDestination || 'Pune';
+      setRawRestaurants(getFallbackRestaurants(city));
+      setResolvedLocationName(`${city} Railway Station`);
+      setNextStopData(deriveNextStopFromNodes(currentTripNodes, city));
+    }
+  }, [activeDestination, activeMode, currentTripNodes]);
+
+  // 1. Fetch next stop from backend API (graceful background check, never crashes demo)
   const fetchNextStop = useCallback(async () => {
+    const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+    // In production over HTTPS, skip direct HTTP localhost calls to prevent mixed-content errors
+    if (isHttps && BACKEND_BASE.startsWith('http://localhost')) {
+      const fallbackStop = deriveNextStopFromNodes(currentTripNodes, activeDestination);
+      setNextStopData(fallbackStop);
+      return fallbackStop;
+    }
+
     setIsLoadingNextStop(true);
     setLocationError(null);
     try {
-      const resp = await fetch(`${BACKEND_BASE}/api/trips/${effectiveTripId}/next-stop`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const resp = await fetch(`${BACKEND_BASE}/api/trips/${effectiveTripId}/next-stop`, {
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
       if (resp.ok) {
         const data = await resp.json();
         setNextStopData(data);
@@ -67,7 +150,7 @@ export default function DiningHub({
         return fallbackStop;
       }
     } catch (err) {
-      console.warn('[dining] Next-stop API check failed, using local trip nodes:', err);
+      console.warn('[dining] Next-stop backend check skipped, using demo stop:', err);
       const fallbackStop = deriveNextStopFromNodes(currentTripNodes, activeDestination);
       setNextStopData(fallbackStop);
       return fallbackStop;
@@ -76,95 +159,30 @@ export default function DiningHub({
     }
   }, [effectiveTripId, currentTripNodes, activeDestination]);
 
-  // Client-side fallback to inspect itinerary nodes
-  const deriveNextStopFromNodes = (nodes, destinationFallback) => {
-    if (!nodes || nodes.length === 0) {
-      return {
-        available: true,
-        node_id: 'default-pune',
-        node_type: 'TRAIN',
-        name: `${destinationFallback || 'Pune'} Railway Station`,
-        location: `${destinationFallback || 'Pune'} Railway Station`,
-        destination: destinationFallback || 'Pune',
-        arrival_time: '19:35',
-        latitude: null,
-        longitude: null
-      };
-    }
-
-    const trainOrFlight = nodes.find(n => (n.type || '').toLowerCase() === 'train' || (n.type || '').toLowerCase() === 'flight');
-    if (trainOrFlight) {
-      const typeUpper = (trainOrFlight.type || '').toUpperCase();
-      let stopName = `${destinationFallback || 'Pune'} Railway Station`;
-      if (typeUpper === 'FLIGHT') stopName = `${destinationFallback || 'Delhi'} Airport`;
-
-      return {
-        available: true,
-        node_id: trainOrFlight.id,
-        node_type: typeUpper,
-        name: stopName,
-        location: stopName,
-        destination: destinationFallback || 'Pune',
-        arrival_time: trainOrFlight.scheduledEnd || trainOrFlight.actualEnd || '19:35',
-        latitude: null,
-        longitude: null
-      };
-    }
-
-    return {
-      available: true,
-      node_id: nodes[0].id,
-      node_type: (nodes[0].type || 'ACTIVITY').toUpperCase(),
-      name: nodes[0].title || `${destinationFallback} Destination`,
-      location: nodes[0].title,
-      destination: destinationFallback,
-      arrival_time: nodes[0].scheduledStart || '19:35',
-      latitude: null,
-      longitude: null
-    };
-  };
-
   // 2. Resolve coordinates based on active mode
   const resolveLocationForMode = useCallback(async (mode, customQuery = null, stopOverride = null) => {
-    setIsLoadingLocation(true);
     setLocationError(null);
     setCurrentPage(0); // Reset pagination on location change
 
     try {
       if (mode === 'next_stop') {
-        const stop = stopOverride || nextStopData || (await fetchNextStop());
-        if (!stop || !stop.available) {
-          setLocationError(
-            stop?.reason === 'NO_ACTIVE_TRIP'
-              ? 'No active trip found. Use your current location or search an area instead.'
-              : 'Your itinerary has no upcoming stops. Try current location or search manually.'
-          );
-          setIsLoadingLocation(false);
-          return;
-        }
+        const city = activeDestination || 'Pune';
+        const stop = stopOverride || nextStopData || deriveNextStopFromNodes(currentTripNodes, city);
+        const locName = stop.name || stop.location || `${city} Railway Station`;
+        setResolvedLocationName(locName);
 
-        const queryToGeocode = stop.name || stop.location || stop.destination || activeDestination;
-        const geocoded = await searchLocation(queryToGeocode);
-
+        const geocoded = await searchLocation(city);
         if (geocoded) {
-          const locName = stop.name || geocoded.name || queryToGeocode;
           setCurrentCoords({
             lat: geocoded.lat,
             lng: geocoded.lng,
             displayName: geocoded.displayName,
             name: locName
           });
-          setResolvedLocationName(locName);
-
-          // Debug logging
-          console.log(`[dining] mode=NEXT_STOP`);
-          console.log(`[dining] location=${locName}`);
-          console.log(`[dining] lat=${geocoded.lat}`);
-          console.log(`[dining] lng=${geocoded.lng}`);
-        } else {
-          setLocationError("We couldn't locate your next stop. Try searching the location manually.");
         }
+        setRawRestaurants(getFallbackRestaurants(city));
       } else if (mode === 'current_loc') {
+        setIsLoadingLocation(true);
         try {
           const userLoc = await getUserLocation();
           setCurrentCoords({
@@ -173,63 +191,62 @@ export default function DiningHub({
             name: userLoc.name
           });
           setResolvedLocationName(userLoc.name);
-
-          // Debug logging
-          console.log(`[dining] mode=CURRENT_LOCATION`);
-          console.log(`[dining] location=${userLoc.name}`);
-          console.log(`[dining] lat=${userLoc.lat}`);
-          console.log(`[dining] lng=${userLoc.lng}`);
+          console.log(`[dining] mode=CURRENT_LOCATION, location=${userLoc.name}`);
         } catch (geoErr) {
           console.warn('[dining] Geolocation failed:', geoErr.message);
           setLocationError('Location access unavailable. Search an area instead.');
+        } finally {
+          setIsLoadingLocation(false);
         }
       } else if (mode === 'search') {
         const q = customQuery || searchQuery || activeDestination;
         if (!q.trim()) {
           setLocationError('Please enter a location to search.');
-          setIsLoadingLocation(false);
           return;
         }
 
-        const geocoded = await searchLocation(q);
-        if (geocoded) {
-          const locName = geocoded.name || q;
-          setCurrentCoords({
-            lat: geocoded.lat,
-            lng: geocoded.lng,
-            displayName: geocoded.displayName,
-            name: locName
-          });
-          setResolvedLocationName(locName);
-
-          // Debug logging
-          console.log(`[dining] mode=SEARCH`);
-          console.log(`[dining] location=${locName}`);
-          console.log(`[dining] lat=${geocoded.lat}`);
-          console.log(`[dining] lng=${geocoded.lng}`);
-        } else {
-          setLocationError(`Could not find coordinates for "${q}". Please try a nearby station, landmark, or city.`);
+        setIsLoadingLocation(true);
+        try {
+          const geocoded = await searchLocation(q);
+          if (geocoded) {
+            const locName = geocoded.name || q;
+            setCurrentCoords({
+              lat: geocoded.lat,
+              lng: geocoded.lng,
+              displayName: geocoded.displayName,
+              name: locName
+            });
+            setResolvedLocationName(locName);
+            console.log(`[dining] mode=SEARCH, location=${locName}`);
+          } else {
+            setLocationError(`Could not find coordinates for "${q}". Please try a nearby station, landmark, or city.`);
+          }
+        } finally {
+          setIsLoadingLocation(false);
         }
       }
     } catch (err) {
       console.error('[dining] Location resolution error:', err);
       setLocationError('Error determining location coordinates.');
-    } finally {
       setIsLoadingLocation(false);
     }
-  }, [nextStopData, fetchNextStop, activeDestination, searchQuery]);
+  }, [nextStopData, currentTripNodes, activeDestination, searchQuery]);
 
-  // Initial load: Fetch next stop & resolve
+  // Initial load: Background check for next stop if backend is reachable (never blocks UI)
   useEffect(() => {
-    fetchNextStop().then((stop) => {
-      resolveLocationForMode('next_stop', null, stop);
+    fetchNextStop().catch(() => {
+      // Ignored: fallback dataset is already active
     });
   }, [fetchNextStop]);
 
-  // 3. Real Nearby Restaurant Query via OpenStreetMap Overpass
+  // 3. Real Nearby Restaurant Query via OpenStreetMap Overpass (Active ONLY for user-initiated live search & current location)
   useEffect(() => {
+    // Initial/Demo mode (next_stop) NEVER depends on Overpass, ensuring 100% demo reliability
+    if (activeMode === 'next_stop') {
+      return;
+    }
+
     if (!currentCoords || currentCoords.lat == null || currentCoords.lng == null) {
-      setRawRestaurants([]);
       return;
     }
 
@@ -238,18 +255,24 @@ export default function DiningHub({
     setCurrentPage(0); // Reset pagination on radius or location change
 
     const radiusMeters = radiusKm * 1000;
-    console.log(`[dining] radius=${radiusMeters}`);
+    console.log(`[dining] Live querying Overpass: lat=${currentCoords.lat}, lng=${currentCoords.lng}, radius=${radiusMeters}`);
 
     getNearbyRestaurants(currentCoords.lat, currentCoords.lng, radiusMeters)
       .then((results) => {
         if (!isMounted) return;
-        setRawRestaurants(results);
-        console.log(`[dining] restaurants=${results.length}`);
+        if (results && results.length > 0) {
+          setRawRestaurants(results);
+          console.log(`[dining] Live Overpass found ${results.length} restaurants`);
+        } else {
+          // Graceful fallback if Overpass returned 0 results in radius
+          console.log('[dining] Overpass returned 0 results, using fallback dataset for target');
+          setRawRestaurants(getFallbackRestaurants(searchQuery || resolvedLocationName || activeDestination));
+        }
       })
       .catch((err) => {
         if (!isMounted) return;
-        console.error('[dining] Failed to fetch Overpass restaurants:', err);
-        setRawRestaurants([]);
+        console.warn('[dining] Overpass live search unavailable (CORS/network), gracefully using fallback dataset:', err);
+        setRawRestaurants(getFallbackRestaurants(searchQuery || resolvedLocationName || activeDestination));
       })
       .finally(() => {
         if (isMounted) {
@@ -260,7 +283,7 @@ export default function DiningHub({
     return () => {
       isMounted = false;
     };
-  }, [currentCoords, radiusKm]);
+  }, [activeMode, currentCoords, radiusKm, searchQuery, resolvedLocationName, activeDestination]);
 
   // Handle Mode Change
   const handleModeChange = (newMode) => {
